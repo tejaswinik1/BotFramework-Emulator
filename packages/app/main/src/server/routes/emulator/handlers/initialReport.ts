@@ -31,48 +31,23 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { addUsers, setCurrentUser } from '../actions/userActions';
+import { Next, Request, Response } from 'restify';
+import { OK } from 'http-status-codes';
 
-import { users } from './users';
+import { EmulatorRestServer } from '../../../restServer';
 
-describe('users reducer', () => {
-  it('should return the unmodified state on unrecognized action', () => {
-    expect(users(undefined, { type: '' } as any)).toEqual({});
-  });
+import { Emulator } from '../../../../emulator';
 
-  it('should handle a set current user action', () => {
-    const user: any = { id: 'user1' };
-    const action = setCurrentUser(user);
-    const state = users({} as any, action);
+/* sends the initial conversation report to the log panel (ngrok and server url) */
+export function createInitialReportHandler(emulatorServer: EmulatorRestServer) {
+  return (req: Request, res: Response, next: Next): any => {
+    const botUrl = req.body;
+    const { conversationId } = req.params;
+    emulatorServer.report(conversationId);
+    Emulator.getInstance().ngrok.report(conversationId, botUrl);
 
-    expect(state).toEqual({ currentUserId: 'user1', usersById: { user1: user } });
-  });
-
-  it('should handle an add users action', () => {
-    const initialState: any = {
-      usersById: {
-        user1: {},
-      },
-    };
-    const action = addUsers([
-      { name: '', id: 'user1' },
-      { name: '', id: 'user2' },
-      { name: '', id: 'user3' },
-    ]);
-    const state = users(initialState, action);
-
-    expect(state).toEqual({
-      usersById: {
-        user1: {},
-        user2: {
-          name: '',
-          id: 'user2',
-        },
-        user3: {
-          name: '',
-          id: 'user3',
-        },
-      },
-    });
-  });
-});
+    res.send(OK);
+    res.end();
+    next();
+  };
+}

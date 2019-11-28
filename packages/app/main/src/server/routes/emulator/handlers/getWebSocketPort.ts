@@ -31,19 +31,17 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { Users } from './users';
+import { Next, Request, Response } from 'restify';
 
-describe('Users', () => {
-  it('should initialize with a default current user id', () => {
-    const users = new Users();
-    expect(users.currentUserId).toBe('default-user');
-  });
+import { WebSocketServer } from '../../../webSocketServer';
+import { INTERNAL_SERVER_ERROR, OK } from 'http-status-codes';
 
-  it('should return a user by id', () => {
-    const user: any = { data: 'I am a user!' };
-    const users = new Users();
-    users.users = { id1: user };
-    const retrievedUser = users.usersById('id1');
-    expect(retrievedUser).toBe(user);
-  });
-});
+export async function getWebSocketPort(req: Request, res: Response, next: Next): Promise<any> {
+  try {
+    res.send(OK, WebSocketServer.port || (await WebSocketServer.init()));
+  } catch (e) {
+    res.send(INTERNAL_SERVER_ERROR, e);
+  }
+  res.end();
+  next();
+}

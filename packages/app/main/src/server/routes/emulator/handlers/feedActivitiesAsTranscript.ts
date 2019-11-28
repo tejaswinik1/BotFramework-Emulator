@@ -31,39 +31,30 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { OAuthClientEncoder } from './oauthClientEncoder';
+import { Next, Request, Response } from 'restify';
+import { OK } from 'http-status-codes';
 
-describe('OAuthClientEncoder', () => {
-  it('should initialize with a conversation id', () => {
-    const activity: any = { conversation: { id: 'someId' } };
-    const encoder = new OAuthClientEncoder(activity);
+import { EmulatorRestServer } from '../../../restServer';
+import { WebSocketServer } from '../../../webSocketServer';
 
-    expect((encoder as any)._conversationId).toBe(activity.conversation.id);
-  });
+import { Conversation } from '../../../state/conversation';
 
-  it('should initialize without a conversation id', () => {
-    const activity: any = { conversation: {} };
-    const encoder = new OAuthClientEncoder(activity);
+/** Feed activities into the conversation as a transcript */
+export function createFeedActivitiesAsTranscriptHandler(emulatorServer: EmulatorRestServer) {
+  return (req: Request, res: Response, next: Next): any => {
+    const { conversationId } = req.params;
+    let activities = req.body;
+    const conversation: Conversation = emulatorServer.state.conversations.conversationById(conversationId);
+    activities = conversation.prepTranscriptActivities(activities);
+    activities.forEach(activity => {
+      const payload = { activities: [activity] };
+      const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
+      socket && socket.send(JSON.stringify(payload));
+      conversation.emulatorServer.logger.logActivity(conversation.conversationId, activity, activity.recipient.role);
+    });
 
-    expect((encoder as any)._conversationId).toBe(undefined);
-  });
-
-  it('should visit a card action', () => {
-    const encoder = new OAuthClientEncoder(null);
-
-    expect((encoder as any).visitCardAction(null)).toBe(null);
-  });
-
-  it('should visit an oauth card action', () => {
-    const activity: any = { conversation: { id: 'someId' } };
-    const connectionName = 'someConnectionName';
-    const cardAction: any = { type: 'signin' };
-    const encodedOAuthUrl =
-      OAuthClientEncoder.OAuthEmulatorUrlProtocol + '//' + connectionName + '&&&' + activity.conversation.id;
-    const encoder = new OAuthClientEncoder(activity);
-    (encoder as any).visitOAuthCardAction(connectionName, cardAction);
-
-    expect(cardAction.type).toBe('openUrl');
-    expect(cardAction.value).toEqual(encodedOAuthUrl);
-  });
-});
+    res.send(OK);
+    res.end();
+    next();
+  };
+}

@@ -249,6 +249,11 @@ export class EmulatorRestServer {
       mode,
     } = conversation;
 
+    // this is firing after initializing a conversation on the client side,
+    // which causes the conversation to be initialized again, and reset the user,
+    // overriding any new user id with whatever the previous one was
+    //
+    // maybe try going back to the model where we re-used the conversation object, but reinitialize DL with the new properties (userid, convoid, etc.)
     await this.commandService.remoteCall(
       SharedConstants.Commands.Emulator.NewLiveChat,
       {

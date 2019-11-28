@@ -31,7 +31,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { ResourceResponse } from '@bfemulator/sdk-shared';
+//import { ResourceResponse } from '@bfemulator/sdk-shared';
 import { Activity } from 'botframework-schema';
 import * as HttpStatus from 'http-status-codes';
 import { Next, Request, Response } from 'restify';
@@ -40,10 +40,11 @@ import { OAuthLinkEncoder } from '../../../../utils/oauthLinkEncoder';
 import { sendErrorResponse } from '../../../../utils/sendErrorResponse';
 import { ConversationAPIPathParameters } from '../types/conversationAPIPathParameters';
 import { EmulatorRestServer } from '../../../../restServer';
+import { WebSocketServer } from '../../../../webSocketServer';
 
 export function createReplyToActivityHandler(emulatorServer: EmulatorRestServer) {
   return (req: Request, res: Response, next: Next): any => {
-    const activity = req.body as Activity;
+    let activity = req.body as Activity;
     const conversationParameters: ConversationAPIPathParameters = req.params;
     const { logger } = emulatorServer;
 
@@ -51,10 +52,36 @@ export function createReplyToActivityHandler(emulatorServer: EmulatorRestServer)
       activity.id = activity.id || null;
       activity.replyToId = req.params.activityId;
 
+      // TODO: make sure all this stuff works with transcripts
       const continuation = function(): void {
-        const response: ResourceResponse = (req as any).conversation.postActivityToUser(activity);
+        //const response: ResourceResponse = (req as any).conversation.postActivityToUser(activity);
+        const { conversation } = req as any;
 
-        res.send(HttpStatus.OK, response);
+        // processing
+        activity = conversation.postage(conversation.user.id, activity, false);
+        if (!activity.from.name) {
+          activity.from.name = 'Bot';
+        }
+
+        if (activity.name === 'ReceivedActivity') {
+          activity.value.from.role = 'user';
+        } else if (activity.name === 'SentActivity') {
+          activity.value.from.role = 'bot';
+        }
+
+        if (!activity.locale) {
+          activity.locale = conversation.emulatorServer.state.locale;
+        }
+
+        // Fill in role field, if missing
+        if (!activity.recipient.role) {
+          activity.recipient.role = 'user';
+        }
+        const payload = { activities: [activity] };
+        WebSocketServer.send(payload);
+
+        //res.send(HttpStatus.OK, response);
+        res.send(HttpStatus.OK, { id: activity.id });
         res.end();
       };
 

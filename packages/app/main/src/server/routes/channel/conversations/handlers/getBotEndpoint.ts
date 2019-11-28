@@ -33,7 +33,7 @@
 
 import { Next, Request, Response } from 'restify';
 
-import { usGovernmentAuthentication } from '../../../../constants/authEndpoints';
+import { authentication, usGovernmentAuthentication } from '../../../../constants/authEndpoints';
 import { BotEndpoint } from '../../../../state/botEndpoint';
 import { ServerState } from '../../../../state/serverState';
 
@@ -53,10 +53,10 @@ export function createGetBotEndpointHandler(state: ServerState) {
         'x-emulator-channelservice': channelServiceType,
       } = req.headers as { [prop: string]: string };
 
-      let channelService;
-      if (channelServiceType === 'azureusgovernment') {
-        channelService = usGovernmentAuthentication.channelService;
-      }
+      const channelService =
+        channelServiceType === 'azureusgovernment'
+          ? usGovernmentAuthentication.channelService
+          : authentication.channelService;
 
       let endpoint = endpoints.get(botUrl);
       if (!endpoint) {

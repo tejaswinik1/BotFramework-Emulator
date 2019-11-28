@@ -94,10 +94,6 @@ export class Conversation extends EventEmitter {
   public emulatorServer: EmulatorRestServer;
   public user: User;
   public mode: EmulatorMode;
-  // flag indicating if the user has been shown the
-  // "please don't use default Bot State API" warning message
-  // when they try to write bot state data
-  public stateApiDeprecationWarningShown: boolean = false;
   public codeVerifier: string = undefined;
   public members: User[] = [];
   public nextWatermark = 0;
@@ -759,7 +755,7 @@ export class Conversation extends EventEmitter {
     return response;
   }
 
-  private postage(recipientId: string, activity: Partial<Activity>, isHistoric: boolean = false): Activity {
+  public postage(recipientId: string, activity: Partial<Activity>, isHistoric: boolean = false): Activity {
     const date = moment();
 
     const timestamp = isHistoric ? activity.timestamp : date.toISOString();

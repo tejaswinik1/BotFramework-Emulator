@@ -34,11 +34,19 @@ import * as Electron from 'electron';
 import { MenuItemConstructorOptions } from 'electron';
 import { Activity } from 'botframework-schema';
 import { SharedConstants, ValueTypes, newNotification } from '@bfemulator/app-shared';
-import { CommandServiceImpl, CommandServiceInstance, ConversationService } from '@bfemulator/sdk-shared';
+import {
+  CommandServiceImpl,
+  CommandServiceInstance,
+  ConversationService,
+  uniqueIdv4,
+  uniqueId,
+} from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory } from 'botframework-webchat';
 import { createStore as createWebChatStore } from 'botframework-webchat-core';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
+import { encode } from 'base64url';
+import { createDirectLine } from 'botframework-webchat';
 
 import {
   ChatAction,
@@ -49,11 +57,18 @@ import {
   updatePendingSpeechTokenRetrieval,
   webChatStoreUpdated,
   webSpeechFactoryUpdated,
+  newConversation,
+  InitializeConversationPayload,
+  initializeConversation,
+  NewConversationPayload,
+  NewChatDocumentPayload,
+  RestartConversationPayload,
 } from '../actions/chatActions';
 import { RootState } from '../store';
 import { isSpeechEnabled } from '../../utils';
 import { ChatDocument } from '../reducers/chat';
 import { beginAdd } from '../actions/notificationActions';
+import { ChannelService } from 'packages/sdk/shared/build/types/channelService';
 
 const getConversationIdFromDocumentId = (state: RootState, documentId: string) => {
   return (state.chat.chats[documentId] || { conversationId: null }).conversationId;
@@ -70,8 +85,12 @@ const getEndpointServiceByDocumentId = (state: RootState, documentId: string): I
   ) as IEndpointService;
 };
 
-const getChatFromDocumentId = (state: RootState, documentId: string): any => {
+const getChatFromDocumentId = (state: RootState, documentId: string): ChatDocument => {
   return state.chat.chats[documentId];
+};
+
+const getCustomUserGUID = (state: RootState): string => {
+  return state.framework.userGUID;
 };
 
 export class ChatSagas {
@@ -121,38 +140,31 @@ export class ChatSagas {
     yield call([ChatSagas.commandService, ChatSagas.commandService.remoteCall], DeleteConversation, conversationId);
   }
 
-  public static *newChat(action: ChatAction<Partial<ChatDocument & ClearLogPayload>>): Iterable<any> {
-    const { documentId, resolver } = action.payload;
+  public static *newChat(action: ChatAction<NewChatDocumentPayload & RestartConversationPayload>): Iterable<any> {
+    const { documentId, requireNewConversationId, requireNewUserId, resolver } = action.payload;
     // Create a new webchat store for this documentId
     yield put(webChatStoreUpdated(documentId, createWebChatStore()));
     // Each time a new chat is open, retrieve the speech token
     // if the endpoint is speech enabled and create a bound speech
     // pony fill factory. This is consumed by WebChat...
     yield put(webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
-    const conversationId = yield select(getConversationIdFromDocumentId, documentId);
-    // Try the bot file
-    let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
-    // Not there. Try the service
-    if (!endpoint) {
-      try {
-        const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-        const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
-        if (!endpointResponse.ok) {
-          const error = yield endpointResponse.json();
-          throw new Error(error.error.message);
-        }
-        endpoint = yield endpointResponse.json();
-      } catch (e) {
-        yield put(beginAdd(newNotification('' + e)));
-      }
-    }
 
+    // create the new directline object, and update the user / conversation ids if necessary
+    const endpoint: IEndpointService = yield ChatSagas.initializeConversation(
+      documentId,
+      requireNewConversationId,
+      requireNewUserId
+    );
+
+    // If speech is not enabled we are done here
     if (!isSpeechEnabled(endpoint)) {
       if (resolver) {
         resolver();
       }
       return;
     }
+
+    // Get a token for speech and setup speech integration with Web Chat
     yield put(updatePendingSpeechTokenRetrieval(true));
     // If an existing factory is found, refresh the token
     const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
@@ -176,9 +188,79 @@ export class ChatSagas {
     }
 
     yield put(updatePendingSpeechTokenRetrieval(false));
+
     if (resolver) {
       resolver();
     }
+  }
+
+  // Creates DL object and updates the corresponding chat document in state
+  public static *initializeConversation(
+    documentId: string,
+    requireNewConversationId: boolean,
+    requireNewUserId: boolean
+  ): Iterable<any> {
+    const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
+    const { mode } = chat;
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+
+    // set user id
+    let userId;
+    if (requireNewUserId) {
+      userId = uniqueIdv4();
+    } else {
+      // use the previous id or the custom id from settings
+      userId = chat.userId || (yield select(getCustomUserGUID));
+    }
+    yield ChatSagas.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
+
+    let conversationId;
+    if (requireNewConversationId) {
+      conversationId = `${uniqueId()}|${mode}`;
+    } else {
+      // perserve the current conversation id
+      conversationId = chat.conversationId || `${uniqueId()}|${mode}`;
+    }
+
+    // update the main-side conversation object with conversation & user IDs,
+    // and ensure that conversation is in a fresh state
+    let res: Response = yield ConversationService.updateConversation(serverUrl, chat.conversationId, {
+      conversationId,
+      userId,
+    });
+    // TODO: error handling here (if 404, blah)
+
+    res = yield ConversationService.getConversationEndpoint(serverUrl, chat.conversationId);
+    const endpoint: any = yield res.json();
+    // TODO: more error handling here
+
+    // create the directline object
+    const options = {
+      conversationId,
+      mode,
+      endpointId: endpoint.id,
+      userId,
+    };
+    const secret = encode(JSON.stringify(options));
+    const directLine = createDirectLine({
+      token: 'mytoken',
+      conversationId: options.conversationId,
+      secret,
+      domain: `${serverUrl}/v3/directline`,
+      webSocket: true,
+      streamUrl: 'ws://localhost:5005',
+    });
+
+    // update chat document
+    yield put(
+      newConversation(documentId, {
+        conversationId,
+        directLine,
+        userId,
+        mode,
+      })
+    );
+    return endpoint;
   }
 
   private static getTextFromActivity(activity: Activity): string {
@@ -194,5 +276,5 @@ export class ChatSagas {
 export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
-  yield takeLatest([ChatActions.newChat, ChatActions.clearLog], ChatSagas.newChat);
+  yield takeLatest([ChatActions.newChat, ChatActions.restartConversation], ChatSagas.newChat);
 }

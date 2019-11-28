@@ -54,6 +54,7 @@ import { sendNotificationToClient } from './utils/sendNotificationToClient';
 import { WindowManager } from './windowManager';
 import { ProtocolHandler } from './protocolHandler';
 import { setOpenUrl } from './state/actions/protocolActions';
+import { WebSocketServer } from './server/webSocketServer';
 
 // start app startup timer
 const beginStartupTime = Date.now();
@@ -138,6 +139,7 @@ class EmulatorApplication {
 
   constructor() {
     Emulator.initialize();
+    WebSocketServer.init();
     this.initializeNgrokListeners();
     this.initializeAppListeners();
     this.initializeSystemPreferencesListeners();

@@ -40,6 +40,7 @@ import { Conversation } from '../../../state/conversation';
 import { sendErrorResponse } from '../../../utils/sendErrorResponse';
 import { statusCodeFamily } from '../../../utils/statusCodeFamily';
 import { EmulatorRestServer } from '../../../restServer';
+import { WebSocketServer } from '../../../webSocketServer';
 
 export function createPostActivityHandler(emulatorServer: EmulatorRestServer) {
   const { logMessage } = emulatorServer.logger;
@@ -68,6 +69,10 @@ export function createPostActivityHandler(emulatorServer: EmulatorRestServer) {
         res.send(statusCode || HttpStatus.INTERNAL_SERVER_ERROR, await response.text());
       } else {
         res.send(statusCode, { id: activityId });
+
+        // satisfy the Web Chat echoback requirement
+        // TODO: modify postactivity to return the conversation so that they more accurately match each other?
+        WebSocketServer.send({ activities: [{ ...activity, id: activityId }] });
       }
     } catch (err) {
       sendErrorResponse(req, res, next, err);

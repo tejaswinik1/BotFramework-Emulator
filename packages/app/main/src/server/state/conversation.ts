@@ -759,7 +759,7 @@ export class Conversation extends EventEmitter {
     return response;
   }
 
-  private postage(recipientId: string, activity: Partial<Activity>, isHistoric: boolean = false): Activity {
+  public postage(recipientId: string, activity: Partial<Activity>, isHistoric: boolean = false): Activity {
     const date = moment();
 
     const timestamp = isHistoric ? activity.timestamp : date.toISOString();

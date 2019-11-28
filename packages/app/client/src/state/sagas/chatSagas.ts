@@ -34,11 +34,13 @@ import * as Electron from 'electron';
 import { MenuItemConstructorOptions } from 'electron';
 import { Activity } from 'botframework-schema';
 import { SharedConstants, ValueTypes, newNotification } from '@bfemulator/app-shared';
-import { CommandServiceImpl, CommandServiceInstance, ConversationService } from '@bfemulator/sdk-shared';
+import { CommandServiceImpl, CommandServiceInstance, ConversationService, uniqueIdv4 } from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory } from 'botframework-webchat';
 import { createStore as createWebChatStore } from 'botframework-webchat-core';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
+import { encode } from 'base64url';
+import { createDirectLine } from 'botframework-webchat';
 
 import {
   ChatAction,
@@ -49,6 +51,7 @@ import {
   updatePendingSpeechTokenRetrieval,
   webChatStoreUpdated,
   webSpeechFactoryUpdated,
+  newConversation,
 } from '../actions/chatActions';
 import { RootState } from '../store';
 import { isSpeechEnabled } from '../../utils';
@@ -132,10 +135,10 @@ export class ChatSagas {
     const conversationId = yield select(getConversationIdFromDocumentId, documentId);
     // Try the bot file
     let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
     // Not there. Try the service
     if (!endpoint) {
       try {
-        const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
         const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
         if (!endpointResponse.ok) {
           const error = yield endpointResponse.json();
@@ -148,6 +151,9 @@ export class ChatSagas {
     }
 
     if (!isSpeechEnabled(endpoint)) {
+      // do emulator.tsx side stuff here
+      yield ChatSagas.initializeConversation(documentId, conversationId, endpoint, serverUrl);
+
       if (resolver) {
         resolver();
       }
@@ -176,9 +182,55 @@ export class ChatSagas {
     }
 
     yield put(updatePendingSpeechTokenRetrieval(false));
+
+    // do emulator.tsx side stuff here
+
     if (resolver) {
       resolver();
     }
+  }
+
+  private static *initializeConversation(
+    documentId: string,
+    conversationId: string,
+    endpoint: IEndpointService,
+    serverUrl: string
+  ) {
+    // use existing conversation or generate new one
+    conversationId = conversationId || 'somenewid';
+
+    const mode = 'livechat-url';
+
+    // set user id
+    const userId = uniqueIdv4();
+    yield ChatSagas.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
+
+    // create the directline object
+    const options = {
+      conversationId,
+      mode,
+      endpointId: endpoint.id,
+      userId,
+    };
+    const secret = encode(JSON.stringify(options));
+    const directLine = createDirectLine({
+      token: 'mytoken',
+      conversationId: options.conversationId,
+      secret,
+      domain: `${serverUrl}/v3/directline`,
+      webSocket: true,
+      streamUrl: 'ws://localhost:5005',
+    });
+
+    // update chat document
+    yield put(
+      newConversation(documentId, {
+        conversationId,
+        directLine,
+        userId,
+        mode,
+      })
+    );
   }
 
   private static getTextFromActivity(activity: Activity): string {

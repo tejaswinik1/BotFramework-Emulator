@@ -125,7 +125,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
   componentWillMount() {
     window.addEventListener('keydown', this.keyboardEventListener);
     if (this.shouldStartNewConversation()) {
-      this.startNewConversation();
+      //this.startNewConversation();
     }
   }
 
@@ -134,14 +134,14 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
   }
 
   componentWillReceiveProps(nextProps: EmulatorProps) {
-    const { props, keyboardEventListener, startNewConversation } = this;
+    const { props, keyboardEventListener } = this;
     const { activeDocumentId, documentId } = props;
     const { directLine, documentId: nextDocumentId } = nextProps;
 
     const documentIdChanged = !directLine || documentId !== nextDocumentId;
 
     if (documentIdChanged) {
-      startNewConversation(nextProps).catch();
+      //startNewConversation(nextProps).catch();
     }
     const switchedDocuments = activeDocumentId !== nextProps.activeDocumentId;
     const switchedToThisDocument = nextProps.activeDocumentId === documentId;
@@ -155,7 +155,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
     }
   }
 
-  startNewConversation = async (
+  /*startNewConversation = async (
     props: EmulatorProps = this.props,
     requireNewConvoId: boolean = false,
     requireNewUserId: boolean = false
@@ -236,17 +236,26 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
       }
     }
     this.conversationInitRequested = false;
-  };
+  };*/
 
-  initConversation(props: EmulatorProps, options: any): void {
+  /*initConversation(props: EmulatorProps, options: any): void {
     const encodedOptions = encode(JSON.stringify(options));
 
     // TODO: We need to use encoded token because we need to pass both endpoint ID and conversation ID
     //       We should think about a better model to pass conversation ID from Web Chat to emulator core
+    // const directLine = createDirectLine({
+    //   secret: encodedOptions,
+    //   domain: `${this.props.url}/v3/directline`,
+    //   webSocket: false,
+    // });
+
     const directLine = createDirectLine({
+      token: 'mytoken',
+      conversationId: options.conversationId,
       secret: encodedOptions,
       domain: `${this.props.url}/v3/directline`,
-      webSocket: false,
+      webSocket: true,
+      streamUrl: 'ws://localhost:5005',
     });
 
     this.props.newConversation(props.documentId, {
@@ -256,7 +265,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
       userId: options.userId,
       mode: options.mode,
     });
-  }
+  }*/
 
   render(): JSX.Element {
     return this.props.presentationModeEnabled ? this.renderPresentationView() : this.renderDefaultView();
@@ -386,7 +395,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
           userId: 'new',
         });
         // start conversation with new convo id & user id
-        await this.startNewConversation(undefined, true, true);
+        //await this.startNewConversation(undefined, true, true);
         break;
       }
 
@@ -395,7 +404,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
           userId: 'same',
         });
         // start conversation with new convo id
-        await this.startNewConversation(undefined, true, false);
+        //await this.startNewConversation(undefined, true, false);
         break;
       }
 

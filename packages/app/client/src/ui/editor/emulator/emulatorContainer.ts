@@ -40,7 +40,7 @@ import { Document } from '../../../state/reducers/editor';
 import { updateDocument } from '../../../state/actions/editorActions';
 import { beginAdd } from '../../../state/actions/notificationActions';
 import { executeCommand } from '../../../state/actions/commandActions';
-import { restartConversation } from '../../../state/actions/botActions';
+import { restartConversation as restartDebugSession } from '../../../state/actions/botActions';
 
 import { Emulator, EmulatorProps } from './emulator';
 
@@ -64,25 +64,29 @@ const mapStateToProps = (state: RootState, { documentId, ...ownProps }: { docume
 };
 
 const mapDispatchToProps = (dispatch): EmulatorProps => ({
+  clearLog: (documentId: string) => {
+    dispatch(ChatActions.clearLog(documentId));
+  },
+  createErrorNotification: (notification: Notification) => dispatch(beginAdd(notification)),
   enablePresentationMode: enable =>
     enable ? dispatch(PresentationActions.enable()) : dispatch(PresentationActions.disable()),
-  setInspectorObjects: (documentId, objects) => dispatch(ChatActions.setInspectorObjects(documentId, objects)),
-  clearLog: (documentId: string) => {
-    return new Promise(resolve => {
-      dispatch(ChatActions.clearLog(documentId, resolve));
-    });
-  },
-  restartDebugSession: (conversationId, documentId) => dispatch(restartConversation(conversationId, documentId)),
-  newConversation: (documentId, options) => dispatch(ChatActions.newConversation(documentId, options)),
-  updateChat: (documentId: string, updatedValues: any) => dispatch(ChatActions.updateChat(documentId, updatedValues)),
-  updateDocument: (documentId, updatedValues: Partial<Document>) => dispatch(updateDocument(documentId, updatedValues)),
-  createErrorNotification: (notification: Notification) => dispatch(beginAdd(notification)),
-  trackEvent: (name: string, properties?: { [key: string]: any }) =>
-    dispatch(executeCommand(true, SharedConstants.Commands.Telemetry.TrackEvent, null, name, properties)),
   exportItems: (valueTypes: ValueTypesMask, conversationId: string) =>
     dispatch(
       executeCommand(true, SharedConstants.Commands.Emulator.SaveTranscriptToFile, null, valueTypes, conversationId)
     ),
+  newConversation: (documentId, options) => dispatch(ChatActions.newConversation(documentId, options)),
+  restartConversation: (
+    documentId: string,
+    requireNewConversationId: boolean,
+    requireNewUserId: boolean,
+    resolver?: () => Promise<any>
+  ) => dispatch(ChatActions.restartConversation(documentId, requireNewConversationId, requireNewUserId, resolver)),
+  restartDebugSession: (conversationId, documentId) => dispatch(restartDebugSession(conversationId, documentId)),
+  setInspectorObjects: (documentId, objects) => dispatch(ChatActions.setInspectorObjects(documentId, objects)),
+  trackEvent: (name: string, properties?: { [key: string]: any }) =>
+    dispatch(executeCommand(true, SharedConstants.Commands.Telemetry.TrackEvent, null, name, properties)),
+  updateChat: (documentId: string, updatedValues: any) => dispatch(ChatActions.updateChat(documentId, updatedValues)),
+  updateDocument: (documentId, updatedValues: Partial<Document>) => dispatch(updateDocument(documentId, updatedValues)),
 });
 
 export const EmulatorContainer = connect(mapStateToProps, mapDispatchToProps)(Emulator);

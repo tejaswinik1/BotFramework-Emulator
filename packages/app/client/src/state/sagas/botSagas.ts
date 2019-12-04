@@ -103,15 +103,15 @@ export class BotSagas {
         document.directLine.end();
       }
       document.directLine = null;
-      // Clear the chat log which is an action
-      // that calls into a saga. This is an async
+      yield put(ChatActions.clearLog(documentId));
+      // Restart the conversation. This is an async
       // saga and is critical to wait for completion
       // until the next item is processed.
       let resolver = null;
       const awaiter = new Promise(resolve => {
         resolver = resolve;
       });
-      yield put(ChatActions.clearLog(documentId, resolver));
+      yield put(ChatActions.restartConversation(documentId, false, false, resolver));
       yield awaiter;
 
       yield put(ChatActions.setInspectorObjects(documentId, []));

@@ -34,7 +34,13 @@ import * as Electron from 'electron';
 import { MenuItemConstructorOptions } from 'electron';
 import { Activity } from 'botframework-schema';
 import { SharedConstants, ValueTypes, newNotification } from '@bfemulator/app-shared';
-import { CommandServiceImpl, CommandServiceInstance, ConversationService, uniqueIdv4 } from '@bfemulator/sdk-shared';
+import {
+  CommandServiceImpl,
+  CommandServiceInstance,
+  ConversationService,
+  uniqueIdv4,
+  uniqueId,
+} from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory } from 'botframework-webchat';
 import { createStore as createWebChatStore } from 'botframework-webchat-core';
@@ -52,6 +58,11 @@ import {
   webChatStoreUpdated,
   webSpeechFactoryUpdated,
   newConversation,
+  InitializeConversationPayload,
+  initializeConversation,
+  NewConversationPayload,
+  NewChatDocumentPayload,
+  RestartConversationPayload,
 } from '../actions/chatActions';
 import { RootState } from '../store';
 import { isSpeechEnabled } from '../../utils';
@@ -73,8 +84,12 @@ const getEndpointServiceByDocumentId = (state: RootState, documentId: string): I
   ) as IEndpointService;
 };
 
-const getChatFromDocumentId = (state: RootState, documentId: string): any => {
+const getChatFromDocumentId = (state: RootState, documentId: string): ChatDocument => {
   return state.chat.chats[documentId];
+};
+
+const getCustomUserGUID = (state: RootState): string => {
+  return state.framework.userGUID;
 };
 
 export class ChatSagas {
@@ -124,8 +139,8 @@ export class ChatSagas {
     yield call([ChatSagas.commandService, ChatSagas.commandService.remoteCall], DeleteConversation, conversationId);
   }
 
-  public static *newChat(action: ChatAction<Partial<ChatDocument & ClearLogPayload>>): Iterable<any> {
-    const { documentId, resolver } = action.payload;
+  public static *newChat(action: ChatAction<NewChatDocumentPayload & RestartConversationPayload>): Iterable<any> {
+    const { documentId, requireNewConversationId, requireNewUserId, resolver } = action.payload;
     // Create a new webchat store for this documentId
     yield put(webChatStoreUpdated(documentId, createWebChatStore()));
     // Each time a new chat is open, retrieve the speech token
@@ -152,7 +167,7 @@ export class ChatSagas {
 
     if (!isSpeechEnabled(endpoint)) {
       // do emulator.tsx side stuff here
-      yield ChatSagas.initializeConversation(documentId, conversationId, endpoint, serverUrl);
+      yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
 
       if (resolver) {
         resolver();
@@ -184,26 +199,53 @@ export class ChatSagas {
     yield put(updatePendingSpeechTokenRetrieval(false));
 
     // do emulator.tsx side stuff here
+    yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
 
     if (resolver) {
       resolver();
     }
   }
 
-  private static *initializeConversation(
+  // Creates DL object and updates the corresponding chat document in state
+  public static *initializeConversation(
     documentId: string,
-    conversationId: string,
-    endpoint: IEndpointService,
-    serverUrl: string
-  ) {
+    requireNewConversationId: boolean,
+    requireNewUserId: boolean
+  ): Iterable<any> {
     // use existing conversation or generate new one
-    conversationId = conversationId || 'somenewid';
-
-    const mode = 'livechat-url';
+    const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
+    const { mode } = chat;
+    const conversationId = requireNewConversationId
+      ? `${uniqueId()}|${mode}`
+      : chat.conversationId || `${uniqueId()}|${mode}`;
 
     // set user id
-    const userId = uniqueIdv4();
+    let userId;
+    if (requireNewUserId) {
+      userId = uniqueIdv4();
+    } else {
+      // use the previous id or the custom id from settings
+      userId = chat.userId || (yield select(getCustomUserGUID));
+    }
     yield ChatSagas.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
+
+    // get the bot endpoint
+    // try the bot file
+    let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+    // Not there. Try the service
+    if (!endpoint) {
+      try {
+        const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
+        if (!endpointResponse.ok) {
+          const error = yield endpointResponse.json();
+          throw new Error(error.error.message);
+        }
+        endpoint = yield endpointResponse.json();
+      } catch (e) {
+        yield put(beginAdd(newNotification('' + e)));
+      }
+    }
 
     // create the directline object
     const options = {
@@ -246,5 +288,5 @@ export class ChatSagas {
 export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
-  yield takeLatest([ChatActions.newChat, ChatActions.clearLog], ChatSagas.newChat);
+  yield takeLatest([ChatActions.newChat, ChatActions.restartConversation], ChatSagas.newChat);
 }

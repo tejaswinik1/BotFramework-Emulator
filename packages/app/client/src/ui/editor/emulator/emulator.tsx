@@ -32,7 +32,7 @@
 //
 
 import { Activity } from 'botframework-schema';
-import { createDirectLine } from 'botframework-webchat';
+//import { createDirectLine } from 'botframework-webchat';
 import { DirectLine } from 'botframework-directlinejs';
 import { CommandServiceImpl, CommandServiceInstance, EmulatorMode, uniqueId, uniqueIdv4 } from '@bfemulator/sdk-shared';
 import { SplitButton, Splitter } from '@bfemulator/ui-react';
@@ -42,7 +42,7 @@ import {
   FrameworkSettings,
   newNotification,
   Notification,
-  SharedConstants,
+  // SharedConstants,
   ValueTypesMask,
 } from '@bfemulator/app-shared';
 
@@ -68,7 +68,7 @@ export interface EmulatorProps {
   activeDocumentId?: string;
   activities?: Activity[];
   botId?: string;
-  clearLog?: (documentId: string) => Promise<void>;
+  clearLog?: (documentId: string) => void;
   conversationId?: string;
   createErrorNotification?: (notification: Notification) => void;
   directLine?: DirectLine;
@@ -82,6 +82,12 @@ export interface EmulatorProps {
   mode?: EmulatorMode;
   newConversation?: (documentId: string, options: any) => void;
   presentationModeEnabled?: boolean;
+  restartConversation?: (
+    documentId: string,
+    requireNewConversationId: boolean,
+    requireNewUserId: boolean,
+    resolver?: () => Promise<any>
+  ) => void;
   restartDebugSession?: (conversationId: string, documentId: string) => void;
   setInspectorObjects?: (documentId: string, objects: any) => void;
   trackEvent?: (name: string, properties?: { [key: string]: any }) => void;
@@ -93,9 +99,9 @@ export interface EmulatorProps {
 }
 
 export class Emulator extends React.Component<EmulatorProps, {}> {
-  @CommandServiceInstance()
-  private commandService: CommandServiceImpl;
-  private conversationInitRequested: boolean;
+  //@CommandServiceInstance()
+  // private commandService: CommandServiceImpl;
+  // private conversationInitRequested: boolean;
   private restartButtonRef: HTMLButtonElement;
 
   private readonly onVerticalSizeChange = debounce((sizes: SplitterSize[]) => {
@@ -124,16 +130,16 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
 
   componentWillMount() {
     window.addEventListener('keydown', this.keyboardEventListener);
-    if (this.shouldStartNewConversation()) {
-      //this.startNewConversation();
-    }
+    // if (this.shouldStartNewConversation()) {
+    //   this.startNewConversation();
+    // }
   }
 
   componentWillUnmount() {
     window.removeEventListener('keydown', this.keyboardEventListener);
   }
 
-  componentWillReceiveProps(nextProps: EmulatorProps) {
+  /*componentWillReceiveProps(nextProps: EmulatorProps) {
     const { props, keyboardEventListener } = this;
     const { activeDocumentId, documentId } = props;
     const { directLine, documentId: nextDocumentId } = nextProps;
@@ -146,6 +152,8 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
     const switchedDocuments = activeDocumentId !== nextProps.activeDocumentId;
     const switchedToThisDocument = nextProps.activeDocumentId === documentId;
 
+    // TODO: get rid of this stuff (entire function actually) and just make sure the
+    // current active document / editor combo is this component before firing any keybinds
     if (switchedDocuments) {
       if (switchedToThisDocument) {
         window.addEventListener('keydown', keyboardEventListener);
@@ -153,7 +161,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
         window.removeEventListener('keydown', keyboardEventListener);
       }
     }
-  }
+  }*/
 
   /*startNewConversation = async (
     props: EmulatorProps = this.props,
@@ -383,11 +391,12 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
 
   private onStartOverClick = async (option: string = RestartConversationOptions.NewUserId): Promise<void> => {
     const { NewUserId, SameUserId } = RestartConversationOptions;
-    this.props.setInspectorObjects(this.props.documentId, []);
-    if (this.props.directLine) {
-      this.props.directLine.end();
+    const { directLine, documentId } = this.props;
+    this.props.setInspectorObjects(documentId, []);
+    if (directLine) {
+      directLine.end();
     }
-    await this.props.clearLog(this.props.documentId);
+    this.props.clearLog(documentId);
 
     switch (option) {
       case NewUserId: {
@@ -396,6 +405,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
         });
         // start conversation with new convo id & user id
         //await this.startNewConversation(undefined, true, true);
+        this.props.restartConversation(documentId, true, true);
         break;
       }
 
@@ -405,6 +415,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
         });
         // start conversation with new convo id
         //await this.startNewConversation(undefined, true, false);
+        this.props.restartConversation(documentId, true, false);
         break;
       }
 
@@ -441,12 +452,14 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
   };
 
   private readonly keyboardEventListener: EventListener = async (event: KeyboardEvent): Promise<void> => {
-    // Meta corresponds to 'Command' on Mac
-    const ctrlOrCmdPressed = event.getModifierState('Control') || event.getModifierState('Meta');
-    const shiftPressed = ctrlOrCmdPressed && event.getModifierState('Shift');
-    const key = event.key.toLowerCase();
-    if (ctrlOrCmdPressed && shiftPressed && key === 'r') {
-      await this.onStartOverClick();
+    if (this.props.activeDocumentId === this.props.documentId) {
+      // Meta corresponds to 'Command' on Mac
+      const ctrlOrCmdPressed = event.getModifierState('Control') || event.getModifierState('Meta');
+      const shiftPressed = ctrlOrCmdPressed && event.getModifierState('Shift');
+      const key = event.key.toLowerCase();
+      if (ctrlOrCmdPressed && shiftPressed && key === 'r') {
+        await this.onStartOverClick();
+      }
     }
   };
 }

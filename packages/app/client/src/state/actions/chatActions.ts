@@ -53,6 +53,7 @@ export enum ChatActions {
   clearTranscripts = 'CHAT/TRANSCRIPT/CLEAR',
   removeTranscript = 'CHAT/TRANSCRIPT/REMOVE',
   updateChat = 'CHAT/DOCUMENT/UPDATE',
+  restartConversation = 'CHAT/RESTART',
   showContextMenuForActivity = 'CHAT/CONTEXT_MENU/SHOW',
   webSpeechFactoryUpdated = 'CHAT/SPEECH/TOKEN/RETRIEVED',
   webChatStoreUpdated = 'CHAT/STORE/UPDATED',
@@ -93,7 +94,10 @@ export interface AppendLogPayload {
 
 export interface ClearLogPayload {
   documentId: string;
-  resolver?: Function;
+}
+
+export interface NewChatDocumentPayload extends Partial<ChatDocument> {
+  resolver?: () => Promise<any>;
 }
 
 export interface SetInspectorObjectsPayload {
@@ -115,6 +119,13 @@ export interface RemoveTranscriptPayload {
 export interface UpdateChatPayload {
   documentId: string;
   updatedValues: any;
+}
+
+export interface RestartConversationPayload {
+  documentId: string;
+  requireNewConversationId: boolean;
+  requireNewUserId: boolean;
+  resolver?: () => Promise<any>;
 }
 
 export interface ChatAction<T = any> extends Action {
@@ -178,7 +189,7 @@ export function newChat(
   documentId: string,
   mode: EmulatorMode,
   additionalData?: Partial<ChatDocument>
-): ChatAction<Partial<ChatDocument & ClearLogPayload>> {
+): ChatAction<NewChatDocumentPayload> {
   return {
     type: ChatActions.newChat,
     payload: {
@@ -257,12 +268,11 @@ export function appendToLog(documentId: string, entry: LogEntry): ChatAction<App
   };
 }
 
-export function clearLog(documentId: string, resolver?: Function): ChatAction<ClearLogPayload> {
+export function clearLog(documentId: string): ChatAction<ClearLogPayload> {
   return {
     type: ChatActions.clearLog,
     payload: {
       documentId,
-      resolver,
     },
   };
 }
@@ -306,5 +316,22 @@ export function showContextMenuForActivity(activity: Partial<Activity>): ChatAct
   return {
     type: ChatActions.showContextMenuForActivity,
     payload: activity,
+  };
+}
+
+export function restartConversation(
+  documentId: string,
+  requireNewConversationId: boolean = false,
+  requireNewUserId: boolean = false,
+  resolver?: () => Promise<any>
+): ChatAction<RestartConversationPayload> {
+  return {
+    type: ChatActions.restartConversation,
+    payload: {
+      documentId,
+      requireNewConversationId,
+      requireNewUserId,
+      resolver,
+    },
   };
 }

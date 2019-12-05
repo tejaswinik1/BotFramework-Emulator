@@ -68,6 +68,7 @@ import { RootState } from '../store';
 import { isSpeechEnabled } from '../../utils';
 import { ChatDocument } from '../reducers/chat';
 import { beginAdd } from '../actions/notificationActions';
+import { ChannelService } from 'packages/sdk/shared/build/types/channelService';
 
 const getConversationIdFromDocumentId = (state: RootState, documentId: string) => {
   return (state.chat.chats[documentId] || { conversationId: null }).conversationId;
@@ -147,33 +148,44 @@ export class ChatSagas {
     // if the endpoint is speech enabled and create a bound speech
     // pony fill factory. This is consumed by WebChat...
     yield put(webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
-    const conversationId = yield select(getConversationIdFromDocumentId, documentId);
-    // Try the bot file
-    let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-    // Not there. Try the service
-    if (!endpoint) {
-      try {
-        const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
-        if (!endpointResponse.ok) {
-          const error = yield endpointResponse.json();
-          throw new Error(error.error.message);
-        }
-        endpoint = yield endpointResponse.json();
-      } catch (e) {
-        yield put(beginAdd(newNotification('' + e)));
-      }
-    }
 
+    // create the new directline object, and update the user / conversation ids if necessary
+    const endpoint: IEndpointService = yield ChatSagas.initializeConversation(
+      documentId,
+      requireNewConversationId,
+      requireNewUserId
+    );
+
+    //const conversationId = yield select(getConversationIdFromDocumentId, documentId);
+    // Try the bot file
+    // let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
+    // const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+    // // Not there. Try the service
+    // if (!endpoint) {
+    //   try {
+    //     const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
+    //     if (!endpointResponse.ok) {
+    //       const error = yield endpointResponse.json();
+    //       throw new Error(error.error.message);
+    //     }
+    //     endpoint = yield endpointResponse.json();
+    //   } catch (e) {
+    //     yield put(beginAdd(newNotification('' + e)));
+    //   }
+    // }
+
+    // If speech is not enabled we are done here
     if (!isSpeechEnabled(endpoint)) {
       // do emulator.tsx side stuff here
-      yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
+      //yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
 
       if (resolver) {
         resolver();
       }
       return;
     }
+
+    // Get a token for speech and setup speech integration with Web Chat
     yield put(updatePendingSpeechTokenRetrieval(true));
     // If an existing factory is found, refresh the token
     const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
@@ -199,7 +211,7 @@ export class ChatSagas {
     yield put(updatePendingSpeechTokenRetrieval(false));
 
     // do emulator.tsx side stuff here
-    yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
+    //yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
 
     if (resolver) {
       resolver();
@@ -215,9 +227,7 @@ export class ChatSagas {
     // use existing conversation or generate new one
     const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
     const { mode } = chat;
-    const conversationId = requireNewConversationId
-      ? `${uniqueId()}|${mode}`
-      : chat.conversationId || `${uniqueId()}|${mode}`;
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
 
     // set user id
     let userId;
@@ -229,23 +239,42 @@ export class ChatSagas {
     }
     yield ChatSagas.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
 
+    let res: Response = yield ConversationService.getConversationEndpoint(serverUrl, chat.conversationId);
+    const endpoint: any = yield res.json();
+    let conversationId;
+    if (requireNewConversationId) {
+      // if we are generating a new conversation id, we should create a new conversation
+      conversationId = `${uniqueId()}|${mode}`;
+      res = yield ConversationService.startConversation(serverUrl, {
+        appId: endpoint.appId,
+        appPassword: endpoint.appPassword,
+        channelService: endpoint.channelService as ChannelService,
+        conversationId,
+        endpoint: endpoint.botUrl,
+        mode,
+        user: { id: userId, name: 'User' },
+      });
+    } else {
+      // perserve the current conversation id
+      conversationId = chat.conversationId || `${uniqueId()}|${mode}`;
+    }
+
     // get the bot endpoint
     // try the bot file
-    let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-    // Not there. Try the service
-    if (!endpoint) {
-      try {
-        const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
-        if (!endpointResponse.ok) {
-          const error = yield endpointResponse.json();
-          throw new Error(error.error.message);
-        }
-        endpoint = yield endpointResponse.json();
-      } catch (e) {
-        yield put(beginAdd(newNotification('' + e)));
-      }
-    }
+    // let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
+    // // Not there. Try the service
+    // if (!endpoint) {
+    //   try {
+    //     const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
+    //     if (!endpointResponse.ok) {
+    //       const error = yield endpointResponse.json();
+    //       throw new Error(error.error.message);
+    //     }
+    //     endpoint = yield endpointResponse.json();
+    //   } catch (e) {
+    //     yield put(beginAdd(newNotification('' + e)));
+    //   }
+    // }
 
     // create the directline object
     const options = {
@@ -273,6 +302,7 @@ export class ChatSagas {
         mode,
       })
     );
+    return endpoint;
   }
 
   private static getTextFromActivity(activity: Activity): string {

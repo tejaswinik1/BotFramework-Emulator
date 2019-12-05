@@ -94,10 +94,6 @@ export class Conversation extends EventEmitter {
   public emulatorServer: EmulatorRestServer;
   public user: User;
   public mode: EmulatorMode;
-  // flag indicating if the user has been shown the
-  // "please don't use default Bot State API" warning message
-  // when they try to write bot state data
-  public stateApiDeprecationWarningShown: boolean = false;
   public codeVerifier: string = undefined;
   public members: User[] = [];
   public nextWatermark = 0;

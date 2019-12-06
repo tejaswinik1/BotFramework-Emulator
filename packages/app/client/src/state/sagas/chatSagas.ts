@@ -245,19 +245,22 @@ export class ChatSagas {
     if (requireNewConversationId) {
       // if we are generating a new conversation id, we should create a new conversation
       conversationId = `${uniqueId()}|${mode}`;
-      res = yield ConversationService.startConversation(serverUrl, {
-        appId: endpoint.appId,
-        appPassword: endpoint.appPassword,
-        channelService: endpoint.channelService as ChannelService,
-        conversationId,
-        endpoint: endpoint.botUrl,
-        mode,
-        user: { id: userId, name: 'User' },
-      });
+      // res = yield ConversationService.startConversation(serverUrl, {
+      //   appId: endpoint.appId,
+      //   appPassword: endpoint.appPassword,
+      //   channelService: endpoint.channelService as ChannelService,
+      //   conversationId,
+      //   endpoint: endpoint.botUrl,
+      //   mode,
+      //   user: { id: userId, name: 'User' },
+      // });
     } else {
       // perserve the current conversation id
       conversationId = chat.conversationId || `${uniqueId()}|${mode}`;
     }
+
+    // update the existing conversation object if it exists
+    res = yield ConversationService.updateConversation(serverUrl, chat.conversationId, { conversationId, userId });
 
     // get the bot endpoint
     // try the bot file

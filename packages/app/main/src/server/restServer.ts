@@ -104,6 +104,7 @@ const cors = CORS({
     'x-emulator-apppassword',
     'x-emulator-botendpoint',
     'x-emulator-channelservice',
+    'x-emulator-no-bot-file',
   ],
   exposeHeaders: [],
 });

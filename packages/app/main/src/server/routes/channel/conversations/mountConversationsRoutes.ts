@@ -35,7 +35,7 @@ import { createBotFrameworkAuthenticationMiddleware } from '../../handlers/botFr
 import { createJsonBodyParserMiddleware } from '../../../utils/jsonBodyParser';
 import { EmulatorRestServer } from '../../../restServer';
 
-import { createCreateConversationHandler } from './handlers/createConversation';
+import { createCreateConversationHandler, createCreateConversationHandlerV2 } from './handlers/createConversation';
 import { deleteActivity } from './handlers/deleteActivity';
 import { createGetConversationHandler } from './handlers/getConversation';
 import { getActivityMembers } from './handlers/getActivityMembers';
@@ -46,7 +46,7 @@ import { sendHistoryToConversation } from './handlers/sendHistoryToConversation'
 import { updateActivity } from './handlers/updateActivity';
 import { createUploadAttachmentHandler } from './handlers/uploadAttachment';
 import { createGetConversationsHandler } from './handlers/getConversations';
-import { createGetBotEndpointHandler } from './handlers/getBotEndpoint';
+import { createGetBotEndpointHandler, createGetBotEndpointHandlerV2 } from './handlers/getBotEndpoint';
 
 export function mountConversationsRoutes(emulatorServer: EmulatorRestServer) {
   const { server, state } = emulatorServer;
@@ -60,6 +60,14 @@ export function mountConversationsRoutes(emulatorServer: EmulatorRestServer) {
     jsonBodyParser,
     createGetBotEndpointHandler(state),
     createCreateConversationHandler(emulatorServer)
+  );
+
+  server.post(
+    '/v3/conversations/new',
+    verifyBotFramework,
+    jsonBodyParser,
+    createGetBotEndpointHandlerV2(state),
+    createCreateConversationHandlerV2(emulatorServer)
   );
 
   server.post(

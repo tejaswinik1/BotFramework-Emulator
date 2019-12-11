@@ -33,6 +33,8 @@
 
 import { StartConversationParams } from '../types/activity';
 import { uniqueId } from '../utils';
+import { ChannelService } from '../types/channelService';
+import { EmulatorMode } from '../types';
 
 export const headers = {
   'Content-Accept': 'application/json',
@@ -139,6 +141,25 @@ export class ConversationService {
     });
   }
 
+  public static startConversationV2(serverUrl: string, payload: StartConversationPayload): Promise<Response> {
+    const url = `${serverUrl}/v3/conversations/new`;
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Emulator-No-Bot-File': '',
+      },
+      body: JSON.stringify({
+        ...payload,
+        bot: {
+          id: uniqueId(),
+          name: 'Bot',
+          role: 'bot',
+        },
+      }),
+    });
+  }
+
   public static updateConversation(
     serverUrl: string,
     conversationId: string,
@@ -153,4 +174,19 @@ export class ConversationService {
       body: JSON.stringify(payload),
     });
   }
+}
+
+interface ConversationMember {
+  id: string;
+  name?: string;
+  role?: string;
+}
+export interface StartConversationPayload {
+  bot?: ConversationMember;
+  botUrl: string;
+  channelServiceType: ChannelService;
+  members: ConversationMember[];
+  mode: EmulatorMode;
+  msaAppId?: string;
+  msaPassword?: string;
 }

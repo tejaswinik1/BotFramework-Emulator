@@ -79,3 +79,36 @@ export function createGetBotEndpointHandler(state: ServerState) {
     next();
   };
 }
+
+export function createGetBotEndpointHandlerV2(state: ServerState) {
+  return (req: Request, res: Response, next: Next): any => {
+    const request = req as any;
+    const { endpoints } = state;
+
+    if (req.headers && 'x-emulator-no-bot-file' in req.headers) {
+      // msa id, msa pw, url, channelServiceType, botId
+      const { bot, botUrl, channelServiceType, msaAppId, msaPassword } = req.body;
+      let endpoint = endpoints.get(botUrl);
+      if (!endpoint) {
+        const channelService =
+          channelServiceType === 'azureusgovernment'
+            ? usGovernmentAuthentication.channelService
+            : authentication.channelService;
+
+        // create endpoint
+        endpoint = endpoints.set(
+          bot.id,
+          new BotEndpoint(bot.id, bot.id, botUrl, msaAppId, msaPassword, false, channelService)
+        );
+      } else {
+        endpoint.msaAppId = msaAppId;
+        endpoint.msaPassword = msaPassword;
+      }
+      request.botEndpoint = endpoint;
+    } else {
+      request.botEndpoint = endpoints.getByAppId(request.jwt.appid);
+    }
+
+    next();
+  };
+}

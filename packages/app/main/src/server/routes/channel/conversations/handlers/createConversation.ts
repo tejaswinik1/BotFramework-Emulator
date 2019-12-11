@@ -45,6 +45,47 @@ import { EmulatorRestServer } from '../../../../restServer';
 
 import { validateCreateConversationRequest } from './errorCondition/createConversationValidator';
 
+function validateRequest(payload): any {
+  if (!payload.bot) {
+    return new Error('Missing bot object in request.');
+  } else if (!payload.botEndpoint) {
+    return new Error('Missing botEndpoint object in request.');
+  } else if (payload.members.length !== 1 || payload.members[0].role !== 'user') {
+    return new Error('Missing user inside of members array in request.');
+  }
+  return undefined;
+}
+
+export function createCreateConversationHandlerV2(emulatorServer: EmulatorRestServer) {
+  return (req: Request, res: Response, next: Next): any => {
+    // validate request
+    const validationResult = validateRequest({
+      ...req.body,
+      botEndpoint: (req as any).botEndpoint,
+    });
+    if (validationResult) {
+      res.send(403, validationResult); // bad request
+      res.end();
+      return next();
+    }
+
+    const { members, mode } = req.body;
+    const { botEndpoint }: { botEndpoint: BotEndpoint } = req as any;
+    const { conversations } = emulatorServer.state;
+
+    const conversation = conversations.newConversation(
+      emulatorServer,
+      botEndpoint,
+      members[0],
+      undefined, // generate a conversation id
+      mode
+    );
+    res.send(201, { conversationId: conversation.conversationId, endpointId: botEndpoint.id });
+    res.end();
+    next();
+  };
+}
+
 export function createCreateConversationHandler(emulatorServer: EmulatorRestServer) {
   return (req: Request, res: Response, next: Next): any => {
     const botEndpoint: BotEndpoint = (req as any).botEndpoint;

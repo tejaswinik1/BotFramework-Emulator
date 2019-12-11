@@ -42,33 +42,27 @@ import {
   uniqueId,
 } from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
-import { createCognitiveServicesSpeechServicesPonyfillFactory } from 'botframework-webchat';
+import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
 import { createStore as createWebChatStore } from 'botframework-webchat-core';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
 import { encode } from 'base64url';
-import { createDirectLine } from 'botframework-webchat';
 
 import {
   ChatAction,
   ChatActions,
-  ClearLogPayload,
   closeDocument,
   DocumentIdPayload,
   updatePendingSpeechTokenRetrieval,
   webChatStoreUpdated,
   webSpeechFactoryUpdated,
   newConversation,
-  InitializeConversationPayload,
-  initializeConversation,
-  NewConversationPayload,
   NewChatDocumentPayload,
   RestartConversationPayload,
+  newChat,
 } from '../actions/chatActions';
 import { RootState } from '../store';
 import { isSpeechEnabled } from '../../utils';
 import { ChatDocument } from '../reducers/chat';
-import { beginAdd } from '../actions/notificationActions';
-import { ChannelService } from 'packages/sdk/shared/build/types/channelService';
 
 const getConversationIdFromDocumentId = (state: RootState, documentId: string) => {
   return (state.chat.chats[documentId] || { conversationId: null }).conversationId;
@@ -138,6 +132,72 @@ export class ChatSagas {
     // remove the webchat store when the document is closed
     yield put(webChatStoreUpdated(documentId, null));
     yield call([ChatSagas.commandService, ChatSagas.commandService.remoteCall], DeleteConversation, conversationId);
+  }
+
+  public static *newChatV2(payload: any): Iterable<any> {
+    const { conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
+    // Create a new webchat store for this documentId
+    yield put(webChatStoreUpdated(documentId, createWebChatStore()));
+    // Each time a new chat is open, retrieve the speech token
+    // if the endpoint is speech enabled and create a bound speech
+    // pony fill factory. This is consumed by WebChat...
+    yield put(webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
+
+    // create the DL object and update the chat in the store
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+    const options = {
+      conversationId,
+      mode,
+      endpointId,
+      userId: user.id,
+    };
+    const secret = encode(JSON.stringify(options));
+    const directLine = createDirectLine({
+      token: 'mytoken',
+      conversationId: options.conversationId,
+      secret,
+      domain: `${serverUrl}/v3/directline`,
+      webSocket: true,
+      streamUrl: 'ws://localhost:5005',
+    });
+
+    yield put(
+      newChat(documentId, mode, {
+        conversationId,
+        directLine,
+        userId: user.id,
+      })
+    );
+
+    // if speech is not enabled, we are done
+    if (!msaAppId && !msaPassword) {
+      return;
+    }
+
+    // Get a token for speech and setup speech integration with Web Chat
+    yield put(updatePendingSpeechTokenRetrieval(true));
+    // If an existing factory is found, refresh the token
+    const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
+    const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
+
+    try {
+      const speechAuthenticationToken: Promise<string> = ChatSagas.commandService.remoteCall(
+        command,
+        endpointId,
+        !!existingFactory
+      );
+
+      const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
+        authorizationToken: speechAuthenticationToken,
+        region: 'westus', // Currently, the prod speech service is only deployed to westus
+      });
+
+      yield put(webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
+    } catch (e) {
+      // No-op - this appId/pass combo is not provisioned to use the speech api
+    }
+
+    yield put(updatePendingSpeechTokenRetrieval(false));
   }
 
   public static *newChat(action: ChatAction<NewChatDocumentPayload & RestartConversationPayload>): Iterable<any> {
@@ -277,4 +337,5 @@ export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
   yield takeLatest([ChatActions.newChat, ChatActions.restartConversation], ChatSagas.newChat);
+  yield takeEvery('--NEW-CHAT', ChatSagas.newChatV2);
 }

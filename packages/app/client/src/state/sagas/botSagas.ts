@@ -38,8 +38,12 @@ import {
   CommandServiceInstance,
   ConversationService,
   StartConversationParams,
+  uniqueIdv4,
 } from '@bfemulator/sdk-shared';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
+import { encode } from 'base64url';
+import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
+import { createStore as createWebChatStore } from 'botframework-webchat-core';
 
 import { ActiveBotHelper } from '../../ui/helpers/activeBotHelper';
 import {
@@ -57,6 +61,12 @@ import * as ChatActions from '../actions/chatActions';
 import { ChatDocument } from '../reducers/chat';
 
 import { SharedSagas } from './sharedSagas';
+import { open } from '../actions/editorActions';
+import { ChatSagas } from './chatSagas';
+
+const getWebSpeechFactoryForDocumentId = (state: RootState, documentId: string): (() => any) => {
+  return state.chat.webSpeechFactories[documentId];
+};
 
 export class BotSagas {
   @CommandServiceInstance()
@@ -134,6 +144,121 @@ export class BotSagas {
       const errorNotification = beginAdd(newNotification(error));
       yield put(errorNotification);
     }
+  }
+
+  public static *openBotViaUrlV2(action: BotAction<StartConversationParams>): Iterable<any> {
+    const user = {
+      id: yield select((state: RootState) => state.framework.userGUID) || uniqueIdv4(), // use custom id or generate new one
+      name: 'User',
+      role: 'user',
+    };
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+    const payload = {
+      botUrl: action.payload.endpoint,
+      channelServiceType: action.payload.channelService,
+      members: [user],
+      mode: action.payload.mode,
+      msaAppId: action.payload.appId,
+      msaPassword: action.payload.appPassword,
+    };
+    const res: Response = yield ConversationService.startConversationV2(serverUrl, payload);
+    if (!res.ok) {
+      // error handling here
+    }
+    const { conversationId, endpointId }: { conversationId: string; endpointId: string } = yield res.json();
+    const documentId = `${conversationId}`;
+
+    // trigger chat saga that will populate the chat object in the store
+    yield ChatSagas.newChatV2({
+      conversationId,
+      documentId,
+      endpointId,
+      mode: action.payload.mode,
+      msaAppId: action.payload.appId,
+      msaPassword: action.payload.appPassword,
+      user,
+    });
+
+    // add a document to the store so the livechat tab is rendered
+    const { CONTENT_TYPE_DEBUG, CONTENT_TYPE_LIVE_CHAT } = SharedConstants.ContentTypes;
+    yield put(
+      open({
+        contentType: action.payload.mode === 'debug' ? CONTENT_TYPE_DEBUG : CONTENT_TYPE_LIVE_CHAT,
+        documentId,
+        isGlobal: false,
+      })
+    );
+
+    // do debug POST here and also telemetry
+  }
+
+  public static *doChatSagasStuff(payload: any): Iterator<any> {
+    // here we do web chat prep
+    const { conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
+    // Create a new webchat store for this documentId
+    yield put(ChatActions.webChatStoreUpdated(documentId, createWebChatStore()));
+    // Each time a new chat is open, retrieve the speech token
+    // if the endpoint is speech enabled and create a bound speech
+    // pony fill factory. This is consumed by WebChat...
+    yield put(ChatActions.webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
+
+    // here we create the directline object
+    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+    const options = {
+      conversationId,
+      mode,
+      endpointId,
+      userId: user.id,
+    };
+    const secret = encode(JSON.stringify(options));
+    const directLine = createDirectLine({
+      token: 'mytoken',
+      conversationId: options.conversationId,
+      secret,
+      domain: `${serverUrl}/v3/directline`,
+      webSocket: true,
+      streamUrl: 'ws://localhost:5005',
+    });
+
+    // update chat document
+    yield put(
+      ChatActions.newChat(documentId, mode, {
+        conversationId,
+        directLine,
+        userId: user.id,
+      })
+    );
+
+    // here we do speech stuff if necessary
+    if (!msaAppId && !msaPassword) {
+      // speech is not enabled, we are done
+      return;
+    }
+
+    // Get a token for speech and setup speech integration with Web Chat
+    yield put(ChatActions.updatePendingSpeechTokenRetrieval(true));
+    // If an existing factory is found, refresh the token
+    const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
+    const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
+
+    try {
+      const speechAuthenticationToken: Promise<string> = BotSagas.commandService.remoteCall(
+        command,
+        endpointId,
+        !!existingFactory
+      );
+
+      const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
+        authorizationToken: speechAuthenticationToken,
+        region: 'westus', // Currently, the prod speech service is only deployed to westus
+      });
+
+      yield put(ChatActions.webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
+    } catch (e) {
+      // No-op - this appId/pass combo is not provisioned to use the speech api
+    }
+
+    yield put(ChatActions.updatePendingSpeechTokenRetrieval(false));
   }
 
   public static *openBotViaUrl(action: BotAction<Partial<StartConversationParams>>) {
@@ -214,7 +339,7 @@ export class BotSagas {
 
 export function* botSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(BotActionType.browse, BotSagas.browseForBot);
-  yield takeEvery(BotActionType.openViaUrl, BotSagas.openBotViaUrl);
+  yield takeEvery(BotActionType.openViaUrl, BotSagas.openBotViaUrlV2);
   yield takeEvery(BotActionType.openViaFilePath, BotSagas.openBotViaFilePath);
   yield takeEvery(BotActionType.restartConversation, BotSagas.restartConversation);
   yield takeEvery(BotActionType.setActive, BotSagas.generateHashForActiveBot);

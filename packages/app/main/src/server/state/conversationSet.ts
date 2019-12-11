@@ -64,7 +64,7 @@ export class ConversationSet extends EventEmitter {
       conversation.conversationId += '|livechat';
     }
     this.conversations[conversation.conversationId] = conversation;
-    this.emit('new', conversation);
+    //this.emit('new', conversation);
 
     return conversation;
   }

@@ -95,4 +95,29 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     res.end();
     next();
   });
+
+  // update the conversation object
+  server.put('/emulator/:conversationId', jsonBodyParser, (req, res, next) => {
+    const currentConversationId = req.params.conversationId;
+    const { conversationId, userId } = req.body;
+    const currentConversation = state.conversations.conversationById(currentConversationId);
+    if (!currentConversationId) {
+      // 404
+      res.send(404);
+      return next();
+    }
+
+    // update the conversation object and reset as much as we can to resemble a new conversation
+    state.conversations.deleteConversation(currentConversationId);
+    currentConversation.conversationId = conversationId;
+    currentConversation.user.id = userId;
+    const user = currentConversation.members.find(member => member.name === 'User');
+    user.id = userId;
+    currentConversation.normalize();
+    currentConversation.nextWatermark = 0;
+    state.conversations.conversations[conversationId] = currentConversation;
+
+    res.send(200, 'updated');
+    return next();
+  });
 }

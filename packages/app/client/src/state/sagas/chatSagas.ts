@@ -156,29 +156,8 @@ export class ChatSagas {
       requireNewUserId
     );
 
-    //const conversationId = yield select(getConversationIdFromDocumentId, documentId);
-    // Try the bot file
-    // let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
-    // const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-    // // Not there. Try the service
-    // if (!endpoint) {
-    //   try {
-    //     const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
-    //     if (!endpointResponse.ok) {
-    //       const error = yield endpointResponse.json();
-    //       throw new Error(error.error.message);
-    //     }
-    //     endpoint = yield endpointResponse.json();
-    //   } catch (e) {
-    //     yield put(beginAdd(newNotification('' + e)));
-    //   }
-    // }
-
     // If speech is not enabled we are done here
     if (!isSpeechEnabled(endpoint)) {
-      // do emulator.tsx side stuff here
-      //yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
-
       if (resolver) {
         resolver();
       }
@@ -210,9 +189,6 @@ export class ChatSagas {
 
     yield put(updatePendingSpeechTokenRetrieval(false));
 
-    // do emulator.tsx side stuff here
-    //yield ChatSagas.initializeConversation(documentId, requireNewConversationId, requireNewUserId);
-
     if (resolver) {
       resolver();
     }
@@ -224,7 +200,6 @@ export class ChatSagas {
     requireNewConversationId: boolean,
     requireNewUserId: boolean
   ): Iterable<any> {
-    // use existing conversation or generate new one
     const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
     const { mode } = chat;
     const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
@@ -239,45 +214,25 @@ export class ChatSagas {
     }
     yield ChatSagas.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
 
-    let res: Response = yield ConversationService.getConversationEndpoint(serverUrl, chat.conversationId);
-    const endpoint: any = yield res.json();
     let conversationId;
     if (requireNewConversationId) {
-      // if we are generating a new conversation id, we should create a new conversation
       conversationId = `${uniqueId()}|${mode}`;
-      // res = yield ConversationService.startConversation(serverUrl, {
-      //   appId: endpoint.appId,
-      //   appPassword: endpoint.appPassword,
-      //   channelService: endpoint.channelService as ChannelService,
-      //   conversationId,
-      //   endpoint: endpoint.botUrl,
-      //   mode,
-      //   user: { id: userId, name: 'User' },
-      // });
     } else {
       // perserve the current conversation id
       conversationId = chat.conversationId || `${uniqueId()}|${mode}`;
     }
 
-    // update the existing conversation object if it exists
-    res = yield ConversationService.updateConversation(serverUrl, chat.conversationId, { conversationId, userId });
+    // update the main-side conversation object with conversation & user IDs,
+    // and ensure that conversation is in a fresh state
+    let res: Response = yield ConversationService.updateConversation(serverUrl, chat.conversationId, {
+      conversationId,
+      userId,
+    });
+    // TODO: error handling here (if 404, blah)
 
-    // get the bot endpoint
-    // try the bot file
-    // let endpoint: IEndpointService = yield select(getEndpointServiceByDocumentId, documentId);
-    // // Not there. Try the service
-    // if (!endpoint) {
-    //   try {
-    //     const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
-    //     if (!endpointResponse.ok) {
-    //       const error = yield endpointResponse.json();
-    //       throw new Error(error.error.message);
-    //     }
-    //     endpoint = yield endpointResponse.json();
-    //   } catch (e) {
-    //     yield put(beginAdd(newNotification('' + e)));
-    //   }
-    // }
+    res = yield ConversationService.getConversationEndpoint(serverUrl, chat.conversationId);
+    const endpoint: any = yield res.json();
+    // TODO: more error handling here
 
     // create the directline object
     const options = {

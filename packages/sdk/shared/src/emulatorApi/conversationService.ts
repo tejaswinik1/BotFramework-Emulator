@@ -38,6 +38,11 @@ export const headers = {
   'Content-Accept': 'application/json',
 };
 
+interface UpdateConversationPayload {
+  conversationId: string;
+  userId: string;
+}
+
 export class ConversationService {
   public static addUser(serviceUrl: string, conversationId: string, name?: string, id?: string) {
     const url = `${serviceUrl}/emulator/${conversationId}/users`;
@@ -131,6 +136,21 @@ export class ConversationService {
         members: [user],
         ...body,
       }),
+    });
+  }
+
+  public static updateConversation(
+    serverUrl: string,
+    conversationId: string,
+    payload: UpdateConversationPayload
+  ): Promise<Response> {
+    const url = `${serverUrl}/emulator/${conversationId}`;
+    return fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
     });
   }
 }

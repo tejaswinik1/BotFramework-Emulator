@@ -82,6 +82,8 @@ function getConversation(
   }
 
   if (!conversation) {
+    //TODO: we need to send the conversation updates here
+    // (how is this going) to work with the new websocket model?
     const { members = [] } = params;
     const [member] = members;
     const currentUserId = state.users.currentUserId;

@@ -76,9 +76,16 @@ export class OAuthLinkEncoder {
       if (oauthCard.buttons && oauthCard.buttons.length === 1) {
         const cardAction = oauthCard.buttons[0];
         if (cardAction.type === 'signin' && !OAuthLinkEncoder.EmulateOAuthCards) {
-          const link = cardAction.value
-            ? await this.decorateSignInLink(cardAction.value, codeChallenge) // skills flow, just need to decorate the link
-            : await this.getSignInLink(oauthCard.connectionName, codeChallenge);
+          let link;
+          if (!cardAction.value) {
+            link = await this.getSignInLink(oauthCard.connectionName, codeChallenge);
+          } else {
+            // skills flow
+            const conversation = this.emulatorServer.state.conversations.conversationById(this.conversationId);
+            const { channelData: { botUrl = '' } = {} } = activity;
+            conversation.childBotLocation = botUrl; // store child bot location for later
+            link = await this.decorateSignInLink(cardAction.value, codeChallenge);
+          }
           cardAction.value = link;
           cardAction.type = 'openUrl';
         }

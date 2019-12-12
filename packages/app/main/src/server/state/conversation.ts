@@ -159,7 +159,12 @@ export class Conversation extends EventEmitter {
       activity.recipient.role = 'bot';
     }
 
-    activity.serviceUrl = await this.emulatorServer.getServiceUrl(this.botEndpoint.botUrl);
+    const serviceUrl = await this.emulatorServer.getServiceUrl(this.botEndpoint.botUrl);
+    activity.serviceUrl = serviceUrl;
+    activity.channelData = {
+      ...activity.channelData,
+      emulatorUrl: serviceUrl,
+    };
 
     if (
       !this.conversationIsTranscript &&

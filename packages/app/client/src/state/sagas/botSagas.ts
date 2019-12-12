@@ -39,6 +39,7 @@ import {
   ConversationService,
   StartConversationParams,
   uniqueIdv4,
+  User,
 } from '@bfemulator/sdk-shared';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
 import { encode } from 'base64url';
@@ -165,11 +166,16 @@ export class BotSagas {
     if (!res.ok) {
       // error handling here
     }
-    const { conversationId, endpointId }: { conversationId: string; endpointId: string } = yield res.json();
+    const {
+      conversationId,
+      endpointId,
+      members,
+    }: { conversationId: string; endpointId: string; members: User[] } = yield res.json();
     const documentId = `${conversationId}`;
 
     // trigger chat saga that will populate the chat object in the store
     yield ChatSagas.newChatV2({
+      botUrl: action.payload.endpoint,
       conversationId,
       documentId,
       endpointId,
@@ -189,76 +195,8 @@ export class BotSagas {
       })
     );
 
-    // do debug POST here and also telemetry
-  }
-
-  public static *doChatSagasStuff(payload: any): Iterator<any> {
-    // here we do web chat prep
-    const { conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
-    // Create a new webchat store for this documentId
-    yield put(ChatActions.webChatStoreUpdated(documentId, createWebChatStore()));
-    // Each time a new chat is open, retrieve the speech token
-    // if the endpoint is speech enabled and create a bound speech
-    // pony fill factory. This is consumed by WebChat...
-    yield put(ChatActions.webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
-
-    // here we create the directline object
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-    const options = {
-      conversationId,
-      mode,
-      endpointId,
-      userId: user.id,
-    };
-    const secret = encode(JSON.stringify(options));
-    const directLine = createDirectLine({
-      token: 'mytoken',
-      conversationId: options.conversationId,
-      secret,
-      domain: `${serverUrl}/v3/directline`,
-      webSocket: true,
-      streamUrl: 'ws://localhost:5005',
-    });
-
-    // update chat document
-    yield put(
-      ChatActions.newChat(documentId, mode, {
-        conversationId,
-        directLine,
-        userId: user.id,
-      })
-    );
-
-    // here we do speech stuff if necessary
-    if (!msaAppId && !msaPassword) {
-      // speech is not enabled, we are done
-      return;
-    }
-
-    // Get a token for speech and setup speech integration with Web Chat
-    yield put(ChatActions.updatePendingSpeechTokenRetrieval(true));
-    // If an existing factory is found, refresh the token
-    const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
-    const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
-
-    try {
-      const speechAuthenticationToken: Promise<string> = BotSagas.commandService.remoteCall(
-        command,
-        endpointId,
-        !!existingFactory
-      );
-
-      const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
-        authorizationToken: speechAuthenticationToken,
-        region: 'westus', // Currently, the prod speech service is only deployed to westus
-      });
-
-      yield put(ChatActions.webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
-    } catch (e) {
-      // No-op - this appId/pass combo is not provisioned to use the speech api
-    }
-
-    yield put(ChatActions.updatePendingSpeechTokenRetrieval(false));
+    // send CU, debug POST, and do telemetry
+    yield ChatSagas.sendInitialActivities({ conversationId, members, mode: action.payload.mode });
   }
 
   public static *openBotViaUrl(action: BotAction<Partial<StartConversationParams>>) {

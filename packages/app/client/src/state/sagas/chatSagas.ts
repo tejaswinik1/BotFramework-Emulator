@@ -135,7 +135,7 @@ export class ChatSagas {
   }
 
   public static *newChatV2(payload: any): Iterable<any> {
-    const { conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
+    const { botUrl, conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
     // Create a new webchat store for this documentId
     yield put(webChatStoreUpdated(documentId, createWebChatStore()));
     // Each time a new chat is open, retrieve the speech token
@@ -168,12 +168,22 @@ export class ChatSagas {
         userId: user.id,
       })
     );
+    // call emulator to report proper status to chat panel (listening / ngrok)
+    // TODO: move this to ConversationService
+    yield fetch(`${serverUrl}/emulator/${conversationId}/invoke/initialReport`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(botUrl),
+    });
 
     // if speech is not enabled, we are done
     if (!msaAppId && !msaPassword) {
       return;
     }
 
+    // TODO: TEST SPEECH
     // Get a token for speech and setup speech integration with Web Chat
     yield put(updatePendingSpeechTokenRetrieval(true));
     // If an existing factory is found, refresh the token
@@ -198,6 +208,32 @@ export class ChatSagas {
     }
 
     yield put(updatePendingSpeechTokenRetrieval(false));
+  }
+
+  public static *sendInitialActivities(payload: any): Iterator<any> {
+    const { conversationId, members, mode } = payload;
+
+    let activity;
+    if (mode === 'debug') {
+      // send /INSPECT open activity
+      activity = {
+        type: 'message',
+        text: '/INSPECT open',
+      };
+    } else {
+      // send CU
+      activity = {
+        type: 'conversationUpdate',
+        membersAdded: members,
+        membersRemoved: [],
+      };
+    }
+    const res = yield ConversationService.sendActivityToBot(
+      yield select((state: RootState) => state.clientAwareSettings.serverUrl),
+      conversationId,
+      activity
+    );
+    // error handling on res here
   }
 
   public static *newChat(action: ChatAction<NewChatDocumentPayload & RestartConversationPayload>): Iterable<any> {
@@ -336,6 +372,4 @@ export class ChatSagas {
 export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
-  yield takeLatest([ChatActions.newChat, ChatActions.restartConversation], ChatSagas.newChat);
-  yield takeEvery('--NEW-CHAT', ChatSagas.newChatV2);
 }

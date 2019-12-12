@@ -80,7 +80,11 @@ export function createCreateConversationHandlerV2(emulatorServer: EmulatorRestSe
       undefined, // generate a conversation id
       mode
     );
-    res.send(201, { conversationId: conversation.conversationId, endpointId: botEndpoint.id });
+    res.send(201, {
+      conversationId: conversation.conversationId,
+      endpointId: botEndpoint.id,
+      members: conversation.members,
+    });
     res.end();
     next();
   };

@@ -160,6 +160,17 @@ export class ConversationService {
     });
   }
 
+  public static sendActivityToBot(serverUrl: string, conversationId: string, activity: any): Promise<Response> {
+    const url = `${serverUrl}/v3/directline/conversations/${conversationId}/activities`;
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(activity),
+    });
+  }
+
   public static updateConversation(
     serverUrl: string,
     conversationId: string,

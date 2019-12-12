@@ -210,7 +210,7 @@ export class EmulatorRestServer {
   }
 
   private onAfterRequest = (req: Request, res: Response, route: Route, err): void => {
-    const conversationId = getConversationId(req as ConversationAwareRequest); // route.spec.path: '/api/userToken/getUserData
+    const conversationId = getConversationId(req as ConversationAwareRequest);
     if (!shouldPostToChat(conversationId, req.method, route, req as any)) {
       return;
     }
@@ -226,14 +226,20 @@ export class EmulatorRestServer {
     this.options.logService.logToChat(
       conversationId,
       networkRequestItem(
-        routeSegments[1] || 'N/A' /* TODO: something else here instea of N/A? */,
+        routeSegments[1] || 'N/A' /* TODO: something else here instead of N/A? */,
         (req as any)._body,
         req.headers,
         req.method,
         req.url
       ),
       networkResponseItem((res as any)._data, res.headers, res.statusCode, res.statusMessage, req.url),
-      textItem(level, routeSegments.slice(1).join('.'))
+      textItem(
+        level,
+        routeSegments
+          .slice(1)
+          .map(seg => (seg.startsWith(':') ? `<${seg.substr(1)}>` : seg))
+          .join('/')
+      )
     );
   };
 

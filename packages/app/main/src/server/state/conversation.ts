@@ -772,6 +772,30 @@ export class Conversation extends EventEmitter {
     } as Activity;
   }
 
+  public prepActivityToBeSentToUser(userId: string, activity: Activity): Activity {
+    activity = this.postage(userId, activity, false);
+    if (!activity.from.name) {
+      activity.from.name = 'Bot';
+    }
+
+    if (activity.name === 'ReceivedActivity') {
+      activity.value.from.role = 'user';
+    } else if (activity.name === 'SentActivity') {
+      activity.value.from.role = 'bot';
+    }
+
+    if (!activity.locale) {
+      activity.locale = this.emulatorServer.state.locale;
+    }
+
+    // Fill in role field, if missing
+    if (!activity.recipient.role) {
+      activity.recipient.role = 'user';
+    }
+
+    return activity;
+  }
+
   private addActivityToQueue(activity: Activity) {
     if (this.mode === 'debug' && !traceContainsDebugData(activity)) {
       return;

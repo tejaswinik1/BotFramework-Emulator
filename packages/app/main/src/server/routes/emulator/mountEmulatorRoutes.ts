@@ -48,6 +48,7 @@ import { sendTyping } from './handlers/sendTyping';
 import { updateShippingAddress } from './handlers/updateShippingAddress';
 import { updateShippingOption } from './handlers/updateShippingOption';
 import { createGetConversationEndpointHandler } from './handlers/getConversationEndpoint';
+import { Emulator } from '../../../emulator';
 
 export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
   const { server, state } = emulatorServer;
@@ -119,5 +120,16 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
 
     res.send(200, 'updated');
     return next();
+  });
+
+  server.post('/emulator/:conversationId/invoke/initialReport', jsonBodyParser, (req, res, next) => {
+    const botUrl = req.body;
+    const { conversationId } = req.params;
+    emulatorServer.report(conversationId);
+    Emulator.getInstance().ngrok.report(conversationId, botUrl);
+
+    res.send(200);
+    res.end();
+    next();
   });
 }

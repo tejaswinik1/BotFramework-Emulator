@@ -72,7 +72,8 @@ export function createPostActivityHandler(emulatorServer: EmulatorRestServer) {
 
         // satisfy the Web Chat echoback requirement
         // TODO: modify postactivity to return the conversation so that they more accurately match each other?
-        WebSocketServer.send({ activities: [{ ...activity, id: activityId }] });
+        const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
+        socket && socket.send(JSON.stringify({ activities: [{ ...activity, id: activityId }] }));
       }
     } catch (err) {
       sendErrorResponse(req, res, next, err);

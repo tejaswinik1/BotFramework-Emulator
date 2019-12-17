@@ -138,8 +138,8 @@ class EmulatorApplication {
   private fileToOpen: string;
 
   constructor() {
-    Emulator.initialize();
     WebSocketServer.init();
+    Emulator.initialize();
     this.initializeNgrokListeners();
     this.initializeAppListeners();
     this.initializeSystemPreferencesListeners();
@@ -164,10 +164,11 @@ class EmulatorApplication {
   }
 
   private initializeAppListeners() {
-    app.on('ready', this.onAppReady);
     app.on('activate', this.onAppActivate);
-    app.on('will-finish-launching', this.onAppWillFinishLaunching);
+    app.on('ready', this.onAppReady);
     app.on('open-file', this.onAppOpenFile);
+    app.on('will-finish-launching', this.onAppWillFinishLaunching);
+    app.on('will-quit', this.onAppWillQuit);
   }
 
   // Main browser window listeners
@@ -316,6 +317,10 @@ class EmulatorApplication {
 
   private onAppWillFinishLaunching = () => {
     app.on('open-url', this.onAppOpenUrl);
+  };
+
+  private onAppWillQuit = () => {
+    WebSocketServer.cleanup();
   };
 
   private onAppOpenUrl = (event: any, url: string): void => {

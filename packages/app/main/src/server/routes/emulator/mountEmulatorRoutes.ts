@@ -49,6 +49,7 @@ import { updateShippingAddress } from './handlers/updateShippingAddress';
 import { updateShippingOption } from './handlers/updateShippingOption';
 import { createGetConversationEndpointHandler } from './handlers/getConversationEndpoint';
 import { Emulator } from '../../../emulator';
+//import { WebSocketServer } from '../../webSocketServer';
 
 export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
   const { server, state } = emulatorServer;
@@ -103,7 +104,6 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     const { conversationId, userId } = req.body;
     const currentConversation = state.conversations.conversationById(currentConversationId);
     if (!currentConversationId) {
-      // 404
       res.send(404);
       return next();
     }
@@ -118,8 +118,16 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     currentConversation.nextWatermark = 0;
     state.conversations.conversations[conversationId] = currentConversation;
 
-    res.send(200, 'updated');
-    return next();
+    res.send(200, {
+      // can't return the conversation object because event emitters are circular JSON
+      botEndpoint: currentConversation.botEndpoint,
+      conversationId: currentConversation.conversationId,
+      user: currentConversation.user,
+      mode: currentConversation.mode,
+      members: currentConversation.members,
+      nextWatermark: currentConversation.nextWatermark,
+    });
+    next();
   });
 
   server.post('/emulator/:conversationId/invoke/initialReport', jsonBodyParser, (req, res, next) => {
@@ -128,6 +136,14 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     emulatorServer.report(conversationId);
     Emulator.getInstance().ngrok.report(conversationId, botUrl);
 
+    res.send(200);
+    res.end();
+    next();
+  });
+
+  server.put('/emulator/:conversationId/webSocket', (req, res, next) => {
+    //const { conversationId } = req.params;
+    //WebSocketServer.startServer(conversationId);
     res.send(200);
     res.end();
     next();

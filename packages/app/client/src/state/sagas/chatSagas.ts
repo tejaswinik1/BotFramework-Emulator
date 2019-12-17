@@ -40,6 +40,7 @@ import {
   ConversationService,
   uniqueIdv4,
   uniqueId,
+  EmulatorMode,
 } from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
@@ -59,6 +60,8 @@ import {
   NewChatDocumentPayload,
   RestartConversationPayload,
   newChat,
+  clearLog,
+  setInspectorObjects,
 } from '../actions/chatActions';
 import { RootState } from '../store';
 import { isSpeechEnabled } from '../../utils';
@@ -85,6 +88,10 @@ const getChatFromDocumentId = (state: RootState, documentId: string): ChatDocume
 
 const getCustomUserGUID = (state: RootState): string => {
   return state.framework.userGUID;
+};
+
+const getServerUrl = (state: RootState): string => {
+  return state.clientAwareSettings.serverUrl;
 };
 
 export class ChatSagas {
@@ -136,6 +143,8 @@ export class ChatSagas {
 
   public static *newChatV2(payload: any): Iterable<any> {
     const { botUrl, conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
+    const serverUrl = yield select(getServerUrl);
+
     // Create a new webchat store for this documentId
     yield put(webChatStoreUpdated(documentId, createWebChatStore()));
     // Each time a new chat is open, retrieve the speech token
@@ -144,23 +153,9 @@ export class ChatSagas {
     yield put(webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
 
     // create the DL object and update the chat in the store
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-    const options = {
-      conversationId,
-      mode,
-      endpointId,
-      userId: user.id,
-    };
-    const secret = encode(JSON.stringify(options));
-    const directLine = createDirectLine({
-      token: 'mytoken',
-      conversationId: options.conversationId,
-      secret,
-      domain: `${serverUrl}/v3/directline`,
-      webSocket: true,
-      streamUrl: 'ws://localhost:5005',
-    });
-
+    const directLine = yield ChatSagas.createDirectLineObject(conversationId, mode, endpointId, user.id);
+    // start the websocket server
+    //yield fetch(`${serverUrl}/emulator/${conversationId}/webSocket`, { method: 'PUT' });
     yield put(
       newChat(documentId, mode, {
         conversationId,
@@ -168,6 +163,7 @@ export class ChatSagas {
         userId: user.id,
       })
     );
+
     // call emulator to report proper status to chat panel (listening / ngrok)
     // TODO: move this to ConversationService
     yield fetch(`${serverUrl}/emulator/${conversationId}/invoke/initialReport`, {
@@ -228,12 +224,144 @@ export class ChatSagas {
         membersRemoved: [],
       };
     }
-    const res = yield ConversationService.sendActivityToBot(
-      yield select((state: RootState) => state.clientAwareSettings.serverUrl),
+    const res: Response = yield ConversationService.sendActivityToBot(
+      yield select(getServerUrl),
       conversationId,
       activity
     );
-    // error handling on res here
+    if (!res.ok) {
+      // err handling here
+    }
+  }
+
+  public static *createDirectLineObject(
+    conversationId: string,
+    mode: EmulatorMode,
+    endpointId: string,
+    userId: string
+  ): Iterator<any> {
+    const serverUrl = yield select(getServerUrl);
+    const options = {
+      conversationId,
+      mode,
+      endpointId,
+      userId,
+    };
+    const secret = encode(JSON.stringify(options));
+    const directLine = createDirectLine({
+      token: 'mytoken',
+      conversationId,
+      secret,
+      domain: `${serverUrl}/v3/directline`,
+      webSocket: true,
+      streamUrl: `ws://localhost:5005/websocket/start/${conversationId}`,
+    });
+    return directLine;
+  }
+
+  public static *restartConversation(action: ChatAction<RestartConversationPayload>): Iterable<any> {
+    const { documentId, requireNewConversationId, requireNewUserId, resolver } = action.payload;
+    const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
+    const serverUrl = yield select(getServerUrl);
+
+    if (chat.directLine) {
+      chat.directLine.end();
+      chat.directLine = null;
+    }
+    yield put(clearLog(documentId));
+    yield put(setInspectorObjects(documentId, []));
+    yield put(webChatStoreUpdated(documentId, createWebChatStore())); // reset web chat store
+    yield put(webSpeechFactoryUpdated(documentId, undefined)); // remove old speech token factory
+
+    // re-init new directline object & update conversation object in server state
+    // set user id
+    let userId;
+    if (requireNewUserId) {
+      userId = uniqueIdv4();
+    } else {
+      // use the previous id or the custom id from settings
+      userId = chat.userId || (yield select(getCustomUserGUID));
+    }
+
+    let conversationId;
+    if (requireNewConversationId) {
+      conversationId = `${uniqueId()}|${chat.mode}`;
+    } else {
+      // perserve the current conversation id
+      conversationId = chat.conversationId || `${uniqueId()}|${chat.mode}`;
+    }
+
+    // update the main-side conversation object with conversation & user IDs,
+    // and ensure that conversation is in a fresh state
+    let res: Response = yield ConversationService.updateConversation(serverUrl, chat.conversationId, {
+      conversationId,
+      userId,
+    });
+    if (!res.ok) {
+      // error handling
+    }
+    const { botEndpoint, members }: any = yield res.json(); // TODO: typings
+
+    // create the directline object
+    const directLine = yield ChatSagas.createDirectLineObject(conversationId, chat.mode, botEndpoint.id, userId);
+    // start the websocket server
+    //yield fetch(`${serverUrl}/emulator/${conversationId}/webSocket`, { method: 'PUT' });
+
+    // update chat document
+    yield put(
+      newConversation(documentId, {
+        conversationId,
+        directLine,
+        userId,
+        mode: chat.mode,
+      })
+    );
+
+    // initial report
+    yield fetch(`${serverUrl}/emulator/${conversationId}/invoke/initialReport`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(botEndpoint.botUrl),
+    });
+
+    // send CU
+    yield ChatSagas.sendInitialActivities({ conversationId, members, mode: chat.mode });
+
+    // do speech stuff if necessary
+    if (botEndpoint.msaAppId && botEndpoint.msaPassword) {
+      // Get a token for speech and setup speech integration with Web Chat
+      yield put(updatePendingSpeechTokenRetrieval(true));
+      // If an existing factory is found, refresh the token
+      const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
+      const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
+
+      try {
+        const speechAuthenticationToken: Promise<string> = ChatSagas.commandService.remoteCall(
+          command,
+          botEndpoint.id,
+          !!existingFactory
+        );
+
+        const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
+          authorizationToken: speechAuthenticationToken,
+          region: 'westus', // Currently, the prod speech service is only deployed to westus
+        });
+
+        yield put(webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
+      } catch (e) {
+        // No-op - this appId/pass combo is not provisioned to use the speech api
+      }
+
+      yield put(updatePendingSpeechTokenRetrieval(false));
+    } else {
+      // we are done
+      if (resolver) {
+        resolver();
+      }
+      return;
+    }
   }
 
   public static *newChat(action: ChatAction<NewChatDocumentPayload & RestartConversationPayload>): Iterable<any> {
@@ -372,4 +500,5 @@ export class ChatSagas {
 export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
+  yield takeEvery(ChatActions.restartConversation, ChatSagas.restartConversation);
 }

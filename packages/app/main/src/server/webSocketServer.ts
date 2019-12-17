@@ -31,39 +31,70 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { Server } from 'ws';
+import { createServer, Server, Request, Response } from 'restify';
+import { Server as WSServer } from 'ws';
+
+interface WebSocket {
+  close(): void;
+  send(data: any, cb?: (err?: Error) => void): void;
+}
 
 export class WebSocketServer {
-  private static _server: Server;
-  private static _socket: any;
+  private static _restServer: Server;
+  private static _servers: { [conversationId: string]: WSServer } = {};
+  private static _sockets: { [conversationId: string]: WebSocket } = {};
 
-  public static init(): void {
-    if (!this._server) {
-      this._server = new Server({
-        host: 'localhost', // TODO: potentially add a setting here that uses localhost override?
-        port: 5005,
-      });
-      // listen for connections
-      // this._server.on('connection', this.onConnection);
-      let numCon = 0;
-      let numData = 0;
-      this._server.on('connection', (socket, req) => {
-        console.log('got a connection: ', numCon++);
-        this._socket = socket;
-        socket.on('message', data => {
-          console.log('got data: ', numData++);
-        });
-        socket.on('open', () => {
-          console.log('Got open.');
-        });
-      });
-      console.log('Server initialized');
-    }
+  public static getSocketByConversationId(conversationId: string): WebSocket {
+    return this._sockets[conversationId];
   }
 
-  public static send(data: any): void {
-    if (this._socket) {
-      this._socket.send(JSON.stringify(data));
+  public static init(): void {
+    this._restServer = createServer({ handleUpgrades: true, name: 'Emulator-WebSocket-Host' });
+    this._restServer.get('/websocket/start/:conversationId', (req: Request, res: Response, next) => {
+      const conversationId = req.params.conversationId;
+      if (!(res as any).claimUpgrade) {
+        return next(new Error('Connection must upgrade for web sockets.'));
+      }
+
+      const { head, socket } = (res as any).claimUpgrade();
+
+      // initialize a new web socket server for each new conversation
+      if (conversationId && !this._servers[conversationId]) {
+        const wsServer = new WSServer({
+          noServer: true,
+        });
+        wsServer.on('connection', (socket, req) => {
+          console.log('got a connection for ', conversationId);
+          this._sockets[conversationId] = socket;
+          socket.on('message', data => {
+            // will only receive (blank) data here when DLJS pings us to test the socket connection
+          });
+          socket.on('open', () => {
+            // don't think we need to do anything here?
+          });
+          socket.on('close', (code, reason) => {
+            delete this._servers[conversationId];
+            delete this._sockets[conversationId];
+          });
+        });
+        wsServer.handleUpgrade(req, socket, head, socket => {
+          wsServer.emit('connection', socket, req);
+        });
+        this._servers[conversationId] = wsServer;
+      }
+    });
+    this._restServer.listen(5005, () => {
+      console.log('Web Socket host server listening on 5005...');
+    });
+  }
+
+  public static cleanup(): void {
+    for (const conversationId in this._sockets) {
+      this._sockets[conversationId].close();
     }
+    for (const conversationId in this._servers) {
+      this._servers[conversationId].close();
+    }
+    this._restServer.close();
   }
 }

@@ -42,9 +42,6 @@ import {
   User,
 } from '@bfemulator/sdk-shared';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
-import { encode } from 'base64url';
-import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
-import { createStore as createWebChatStore } from 'botframework-webchat-core';
 
 import { ActiveBotHelper } from '../../ui/helpers/activeBotHelper';
 import {
@@ -195,8 +192,11 @@ export class BotSagas {
       })
     );
 
-    // send CU, debug POST, and do telemetry
+    // send CU, debug POST
     yield ChatSagas.sendInitialActivities({ conversationId, members, mode: action.payload.mode });
+
+    // TODO: save the bot url
+    // TODO: do telemetry
   }
 
   public static *openBotViaUrl(action: BotAction<Partial<StartConversationParams>>) {

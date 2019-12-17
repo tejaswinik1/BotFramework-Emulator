@@ -98,6 +98,7 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     next();
   });
 
+  // TODO: move to separate file
   // update the conversation object
   server.put('/emulator/:conversationId', jsonBodyParser, (req, res, next) => {
     const currentConversationId = req.params.conversationId;
@@ -130,20 +131,13 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     next();
   });
 
+  // TODO: move to separate file
   server.post('/emulator/:conversationId/invoke/initialReport', jsonBodyParser, (req, res, next) => {
     const botUrl = req.body;
     const { conversationId } = req.params;
     emulatorServer.report(conversationId);
     Emulator.getInstance().ngrok.report(conversationId, botUrl);
 
-    res.send(200);
-    res.end();
-    next();
-  });
-
-  server.put('/emulator/:conversationId/webSocket', (req, res, next) => {
-    //const { conversationId } = req.params;
-    //WebSocketServer.startServer(conversationId);
     res.send(200);
     res.end();
     next();

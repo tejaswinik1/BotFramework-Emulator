@@ -50,7 +50,7 @@ export class WebSocketServer {
 
   public static init(): void {
     this._restServer = createServer({ handleUpgrades: true, name: 'Emulator-WebSocket-Host' });
-    this._restServer.get('/websocket/start/:conversationId', (req: Request, res: Response, next) => {
+    this._restServer.get('/ws/:conversationId', (req: Request, res: Response, next) => {
       const conversationId = req.params.conversationId;
       if (!(res as any).claimUpgrade) {
         return next(new Error('Connection must upgrade for web sockets.'));

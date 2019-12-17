@@ -185,6 +185,17 @@ export class ConversationService {
       body: JSON.stringify(payload),
     });
   }
+
+  public static sendInitialLogReport(serverUrl: string, conversationId: string, botUrl: string): Promise<Response> {
+    const url = `${serverUrl}/emulator/${conversationId}/invoke/initialReport`;
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(botUrl),
+    });
+  }
 }
 
 interface ConversationMember {

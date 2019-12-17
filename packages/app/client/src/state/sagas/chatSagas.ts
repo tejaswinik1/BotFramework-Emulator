@@ -131,7 +131,7 @@ export class ChatSagas {
     const conversationId = yield select(getConversationIdFromDocumentId, action.payload.documentId);
     const { DeleteConversation } = SharedConstants.Commands.Emulator;
     const { documentId } = action.payload;
-    const chat = yield select(getChatFromDocumentId, documentId);
+    const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
     if (chat && chat.directLine) {
       chat.directLine.end(); // stop polling
     }
@@ -141,9 +141,8 @@ export class ChatSagas {
     yield call([ChatSagas.commandService, ChatSagas.commandService.remoteCall], DeleteConversation, conversationId);
   }
 
-  public static *newChatV2(payload: any): Iterable<any> {
-    const { botUrl, conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
-    const serverUrl = yield select(getServerUrl);
+  public static *newChat(payload: any): Iterable<any> {
+    const { conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
 
     // Create a new webchat store for this documentId
     yield put(webChatStoreUpdated(documentId, createWebChatStore()));
@@ -154,8 +153,6 @@ export class ChatSagas {
 
     // create the DL object and update the chat in the store
     const directLine = yield ChatSagas.createDirectLineObject(conversationId, mode, endpointId, user.id);
-    // start the websocket server
-    //yield fetch(`${serverUrl}/emulator/${conversationId}/webSocket`, { method: 'PUT' });
     yield put(
       newChat(documentId, mode, {
         conversationId,
@@ -163,16 +160,6 @@ export class ChatSagas {
         userId: user.id,
       })
     );
-
-    // call emulator to report proper status to chat panel (listening / ngrok)
-    // TODO: move this to ConversationService
-    yield fetch(`${serverUrl}/emulator/${conversationId}/invoke/initialReport`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(botUrl),
-    });
 
     // if speech is not enabled, we are done
     if (!msaAppId && !msaPassword) {
@@ -204,59 +191,6 @@ export class ChatSagas {
     }
 
     yield put(updatePendingSpeechTokenRetrieval(false));
-  }
-
-  public static *sendInitialActivities(payload: any): Iterator<any> {
-    const { conversationId, members, mode } = payload;
-
-    let activity;
-    if (mode === 'debug') {
-      // send /INSPECT open activity
-      activity = {
-        type: 'message',
-        text: '/INSPECT open',
-      };
-    } else {
-      // send CU
-      activity = {
-        type: 'conversationUpdate',
-        membersAdded: members,
-        membersRemoved: [],
-      };
-    }
-    const res: Response = yield ConversationService.sendActivityToBot(
-      yield select(getServerUrl),
-      conversationId,
-      activity
-    );
-    if (!res.ok) {
-      // err handling here
-    }
-  }
-
-  public static *createDirectLineObject(
-    conversationId: string,
-    mode: EmulatorMode,
-    endpointId: string,
-    userId: string
-  ): Iterator<any> {
-    const serverUrl = yield select(getServerUrl);
-    const options = {
-      conversationId,
-      mode,
-      endpointId,
-      userId,
-    };
-    const secret = encode(JSON.stringify(options));
-    const directLine = createDirectLine({
-      token: 'mytoken',
-      conversationId,
-      secret,
-      domain: `${serverUrl}/v3/directline`,
-      webSocket: true,
-      streamUrl: `ws://localhost:5005/websocket/start/${conversationId}`,
-    });
-    return directLine;
   }
 
   public static *restartConversation(action: ChatAction<RestartConversationPayload>): Iterable<any> {
@@ -304,8 +238,6 @@ export class ChatSagas {
 
     // create the directline object
     const directLine = yield ChatSagas.createDirectLineObject(conversationId, chat.mode, botEndpoint.id, userId);
-    // start the websocket server
-    //yield fetch(`${serverUrl}/emulator/${conversationId}/webSocket`, { method: 'PUT' });
 
     // update chat document
     yield put(
@@ -318,18 +250,11 @@ export class ChatSagas {
     );
 
     // initial report
-    yield fetch(`${serverUrl}/emulator/${conversationId}/invoke/initialReport`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(botEndpoint.botUrl),
-    });
+    yield ConversationService.sendInitialLogReport(serverUrl, conversationId, botEndpoint.botUrl);
 
     // send CU
     yield ChatSagas.sendInitialActivities({ conversationId, members, mode: chat.mode });
 
-    // do speech stuff if necessary
     if (botEndpoint.msaAppId && botEndpoint.msaPassword) {
       // Get a token for speech and setup speech integration with Web Chat
       yield put(updatePendingSpeechTokenRetrieval(true));
@@ -356,7 +281,7 @@ export class ChatSagas {
 
       yield put(updatePendingSpeechTokenRetrieval(false));
     } else {
-      // we are done
+      // the endpoint is not enabled for speech; we are done
       if (resolver) {
         resolver();
       }
@@ -364,127 +289,50 @@ export class ChatSagas {
     }
   }
 
-  public static *newChat(action: ChatAction<NewChatDocumentPayload & RestartConversationPayload>): Iterable<any> {
-    const { documentId, requireNewConversationId, requireNewUserId, resolver } = action.payload;
-    // Create a new webchat store for this documentId
-    yield put(webChatStoreUpdated(documentId, createWebChatStore()));
-    // Each time a new chat is open, retrieve the speech token
-    // if the endpoint is speech enabled and create a bound speech
-    // pony fill factory. This is consumed by WebChat...
-    yield put(webSpeechFactoryUpdated(documentId, undefined)); // remove the old factory
+  public static *sendInitialActivities(payload: any): Iterator<any> {
+    const { conversationId, members, mode } = payload;
 
-    // create the new directline object, and update the user / conversation ids if necessary
-    const endpoint: IEndpointService = yield ChatSagas.initializeConversation(
-      documentId,
-      requireNewConversationId,
-      requireNewUserId
-    );
-
-    // If speech is not enabled we are done here
-    if (!isSpeechEnabled(endpoint)) {
-      if (resolver) {
-        resolver();
-      }
-      return;
+    let activity;
+    if (mode === 'debug') {
+      // send /INSPECT open activity
+      activity = {
+        type: 'message',
+        text: '/INSPECT open',
+      };
+    } else {
+      // send CU
+      activity = {
+        type: 'conversationUpdate',
+        membersAdded: members,
+        membersRemoved: [],
+      };
     }
-
-    // Get a token for speech and setup speech integration with Web Chat
-    yield put(updatePendingSpeechTokenRetrieval(true));
-    // If an existing factory is found, refresh the token
-    const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
-    const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
-
-    try {
-      const speechAuthenticationToken: Promise<string> = ChatSagas.commandService.remoteCall(
-        command,
-        endpoint.id,
-        !!existingFactory
-      );
-
-      const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
-        authorizationToken: speechAuthenticationToken,
-        region: 'westus', // Currently, the prod speech service is only deployed to westus
-      });
-
-      yield put(webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
-    } catch (e) {
-      // No-op - this appId/pass combo is not provisioned to use the speech api
-    }
-
-    yield put(updatePendingSpeechTokenRetrieval(false));
-
-    if (resolver) {
-      resolver();
-    }
+    return yield ConversationService.sendActivityToBot(yield select(getServerUrl), conversationId, activity);
   }
 
-  // Creates DL object and updates the corresponding chat document in state
-  public static *initializeConversation(
-    documentId: string,
-    requireNewConversationId: boolean,
-    requireNewUserId: boolean
-  ): Iterable<any> {
-    const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
-    const { mode } = chat;
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-
-    // set user id
-    let userId;
-    if (requireNewUserId) {
-      userId = uniqueIdv4();
-    } else {
-      // use the previous id or the custom id from settings
-      userId = chat.userId || (yield select(getCustomUserGUID));
-    }
-    yield ChatSagas.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
-
-    let conversationId;
-    if (requireNewConversationId) {
-      conversationId = `${uniqueId()}|${mode}`;
-    } else {
-      // perserve the current conversation id
-      conversationId = chat.conversationId || `${uniqueId()}|${mode}`;
-    }
-
-    // update the main-side conversation object with conversation & user IDs,
-    // and ensure that conversation is in a fresh state
-    let res: Response = yield ConversationService.updateConversation(serverUrl, chat.conversationId, {
-      conversationId,
-      userId,
-    });
-    // TODO: error handling here (if 404, blah)
-
-    res = yield ConversationService.getConversationEndpoint(serverUrl, chat.conversationId);
-    const endpoint: any = yield res.json();
-    // TODO: more error handling here
-
-    // create the directline object
+  private static *createDirectLineObject(
+    conversationId: string,
+    mode: EmulatorMode,
+    endpointId: string,
+    userId: string
+  ): Iterator<any> {
+    const serverUrl = yield select(getServerUrl);
     const options = {
       conversationId,
       mode,
-      endpointId: endpoint.id,
+      endpointId,
       userId,
     };
     const secret = encode(JSON.stringify(options));
     const directLine = createDirectLine({
       token: 'mytoken',
-      conversationId: options.conversationId,
+      conversationId,
       secret,
       domain: `${serverUrl}/v3/directline`,
       webSocket: true,
-      streamUrl: 'ws://localhost:5005',
+      streamUrl: `ws://localhost:5005/ws/${conversationId}`,
     });
-
-    // update chat document
-    yield put(
-      newConversation(documentId, {
-        conversationId,
-        directLine,
-        userId,
-        mode,
-      })
-    );
-    return endpoint;
+    return directLine;
   }
 
   private static getTextFromActivity(activity: Activity): string {

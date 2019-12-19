@@ -74,6 +74,7 @@ export interface WebChatStorePayload {
 }
 
 export interface PendingSpeechTokenRetrievalPayload {
+  documentId: string;
   pending: boolean;
 }
 
@@ -167,10 +168,13 @@ export function webChatStoreUpdated(documentId: string, store: any): ChatAction<
   };
 }
 
-export function updatePendingSpeechTokenRetrieval(pending: boolean): ChatAction<PendingSpeechTokenRetrievalPayload> {
+export function updatePendingSpeechTokenRetrieval(
+  documentId: string,
+  pending: boolean
+): ChatAction<PendingSpeechTokenRetrievalPayload> {
   return {
     type: ChatActions.updatePendingSpeechTokenRetrieval,
-    payload: { pending },
+    payload: { documentId, pending },
   };
 }
 

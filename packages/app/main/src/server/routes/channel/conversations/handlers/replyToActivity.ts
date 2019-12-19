@@ -52,6 +52,7 @@ export function createReplyToActivityHandler(emulatorServer: EmulatorRestServer)
     try {
       activity.id = activity.id || null;
       activity.replyToId = req.params.activityId;
+      const { conversationId } = conversationParameters;
 
       // TODO: make sure all this stuff works with transcripts
       const continuation = function(): void {
@@ -61,12 +62,12 @@ export function createReplyToActivityHandler(emulatorServer: EmulatorRestServer)
         const payload = { activities: [activity] };
         const socket = WebSocketServer.getSocketByConversationId(conversationId);
         socket && socket.send(JSON.stringify(payload));
+        emulatorServer.logger.logActivity(conversationId, activity, activity.recipient.role);
 
         res.send(HttpStatus.OK, { id: activity.id });
         res.end();
       };
 
-      const { conversationId } = conversationParameters;
       const visitor = new OAuthLinkEncoder(
         emulatorServer,
         req.headers.authorization as string,

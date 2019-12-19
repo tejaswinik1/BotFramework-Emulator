@@ -75,6 +75,7 @@ export interface WebChatStorePayload {
 }
 
 export interface PendingSpeechTokenRetrievalPayload {
+  documentId: string;
   pending: boolean;
 }
 
@@ -125,7 +126,6 @@ export interface RestartConversationPayload {
   documentId: string;
   requireNewConversationId: boolean;
   requireNewUserId: boolean;
-  resolver?: () => Promise<any>;
 }
 
 export interface ChatAction<T = any> extends Action {
@@ -178,10 +178,13 @@ export function webChatStoreUpdated(documentId: string, store: any): ChatAction<
   };
 }
 
-export function updatePendingSpeechTokenRetrieval(pending: boolean): ChatAction<PendingSpeechTokenRetrievalPayload> {
+export function updatePendingSpeechTokenRetrieval(
+  documentId: string,
+  pending: boolean
+): ChatAction<PendingSpeechTokenRetrievalPayload> {
   return {
     type: ChatActions.updatePendingSpeechTokenRetrieval,
-    payload: { pending },
+    payload: { documentId, pending },
   };
 }
 

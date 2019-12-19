@@ -31,25 +31,15 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-export * from './account';
-export * from './activity';
-export * from './attachment';
-export * from './card';
-export * from './ipc';
-export * from './log';
-export * from './payment';
-export * from './response';
+import { connect } from 'react-redux';
 
-export * from './apiException';
-export * from './botConfigWithPath';
-export * from './botData';
-export * from './botEndpointOptions';
-export * from './channelService';
-export * from './entity';
-export * from './error';
-export * from './errorCodes';
-export * from './emulatorMode';
-export * from './logger';
-export * from './speechAuthenticationToken';
-export * from './transcriptRecord';
-export * from './user';
+import { ConnectionMessage, ConnectionMessageProps } from './connectionMessage';
+import { RootState } from 'packages/app/client/src/state';
+
+function mapStateToProps(state: RootState, { documentId }: { documentId: string }): ConnectionMessageProps {
+  return {
+    pendingSpeechTokenRetrieval: state.chat.chats[documentId].pendingSpeechTokenRetrieval,
+  };
+}
+
+export const ConnectionMessageContainer = connect(mapStateToProps, undefined)(ConnectionMessage);

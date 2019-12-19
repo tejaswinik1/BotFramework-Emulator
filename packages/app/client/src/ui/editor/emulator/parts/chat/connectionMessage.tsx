@@ -31,25 +31,15 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-export * from './account';
-export * from './activity';
-export * from './attachment';
-export * from './card';
-export * from './ipc';
-export * from './log';
-export * from './payment';
-export * from './response';
+import * as React from 'react';
 
-export * from './apiException';
-export * from './botConfigWithPath';
-export * from './botData';
-export * from './botEndpointOptions';
-export * from './channelService';
-export * from './entity';
-export * from './error';
-export * from './errorCodes';
-export * from './emulatorMode';
-export * from './logger';
-export * from './speechAuthenticationToken';
-export * from './transcriptRecord';
-export * from './user';
+import { disconnected } from './chat.scss';
+
+export interface ConnectionMessageProps {
+  documentId?: string;
+  pendingSpeechTokenRetrieval?: boolean;
+}
+
+export const ConnectionMessage = (props: ConnectionMessageProps) => {
+  return props.pendingSpeechTokenRetrieval ? <div className={disconnected}>Connecting...</div> : null;
+};

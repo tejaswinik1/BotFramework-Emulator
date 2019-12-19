@@ -44,9 +44,6 @@ import {
 import { createServer, plugins, Server, Response, Route } from 'restify';
 import CORS from 'restify-cors-middleware';
 import { newNotification, SharedConstants } from '@bfemulator/app-shared';
-import { IEndpointService } from 'botframework-config/lib/schema';
-
-import { Emulator } from '../emulator';
 
 import { mountAllRoutes } from './routes/mountAllRoutes';
 import { ServerState } from './state/serverState';
@@ -54,7 +51,6 @@ import { LoggerAdapter } from './state/loggerAdapter';
 import { ConsoleLogService } from './state/consoleLogService';
 import { stripEmptyBearerTokenMiddleware } from './routes/handlers/stripEmptyBearerToken';
 import { Conversation } from './state/conversation';
-import { ConversationSet } from './state/conversationSet';
 
 export interface EmulatorRestServerOptions {
   fetch?: (url: string, options?: any) => Promise<any>;
@@ -142,7 +138,6 @@ export class EmulatorRestServer {
     };
     this.logger = new LoggerAdapter(this.options.logService);
     this.state = new ServerState(this.options.fetch);
-    this.state.conversations.on('new', this.onNewConversation);
     this.getServiceUrl = this.options.getServiceUrl;
     this.getServiceUrlForOAuth = this.options.getServiceUrlForOAuth;
     this.shutDownOAuthNgrokInstance = this.options.shutDownOAuthNgrokInstance;
@@ -242,39 +237,6 @@ export class EmulatorRestServer {
       )
     );
   };
-
-  private onNewConversation = async (conversation: Conversation = {} as Conversation) => {
-    const { conversationId = '' } = conversation;
-    if (!conversationId || conversationId.includes('transcript')) {
-      return;
-    }
-    // Check for an existing livechat window
-    // before creating a new one since "new"
-    // can also mean "restart".
-    const {
-      botEndpoint: { id, botUrl },
-      mode,
-    } = conversation;
-
-    // this is firing after initializing a conversation on the client side,
-    // which causes the conversation to be initialized again, and reset the user,
-    // overriding any new user id with whatever the previous one was
-    //
-    // maybe try going back to the model where we re-used the conversation object, but reinitialize DL with the new properties (userid, convoid, etc.)
-    await this.commandService.remoteCall(
-      SharedConstants.Commands.Emulator.NewLiveChat,
-      {
-        id,
-        endpoint: botUrl,
-      } as IEndpointService,
-      // replace this with some other logic that doesn't use this.botEmulator
-      hasLiveChat(conversationId, this.state.conversations),
-      conversationId,
-      mode
-    );
-    this.report(conversationId);
-    Emulator.getInstance().ngrok.report(conversationId, botUrl);
-  };
 }
 
 function shouldPostToChat(
@@ -291,11 +253,4 @@ function shouldPostToChat(
 
 function getConversationId(req: ConversationAwareRequest): string {
   return req.conversation ? req.conversation.conversationId : req.params.conversationId;
-}
-
-function hasLiveChat(conversationId: string, conversationSet: ConversationSet): boolean {
-  if (conversationId.endsWith('|livechat')) {
-    return !!conversationSet.conversationById(conversationId);
-  }
-  return !!conversationSet.conversationById(conversationId + '|livechat');
 }

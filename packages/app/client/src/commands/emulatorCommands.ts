@@ -33,7 +33,7 @@
 // import base64Url from 'base64url';
 // import { createDirectLine } from 'botframework-webchat';
 import { newNotification, SharedConstants } from '@bfemulator/app-shared';
-import { CommandServiceImpl, CommandServiceInstance, isLocalHostUrl, uniqueId } from '@bfemulator/sdk-shared';
+import { ChannelService, CommandServiceImpl, CommandServiceInstance } from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { Activity } from 'botframework-schema';
 import { Command } from '@bfemulator/sdk-shared';
@@ -45,6 +45,7 @@ import * as EditorActions from '../state/actions/editorActions';
 import { beginAdd } from '../state/actions/notificationActions';
 import { getTabGroupForDocument } from '../state/helpers/editorHelpers';
 import { store } from '../state/store';
+import { openBotViaUrlAction } from '../state';
 
 const {
   Emulator,
@@ -57,60 +58,26 @@ export class EmulatorCommands {
 
   // ---------------------------------------------------------------------------
   // Open a new emulator tabbed document
+  // NOTE: only called for livechats started from .bot file endpoints
   @Command(Emulator.NewLiveChat)
-  protected newLiveChat(
-    endpoint: IEndpointService,
-    focusExistingChat: boolean = false,
-    conversationId: string,
-    mode: EmulatorMode = 'livechat'
-  ) {
-    const state = store.getState();
-    let documentId: string;
-
-    if (focusExistingChat && state.chat.chats) {
-      const { chats } = state.chat;
-      documentId = Object.keys(chats).find(docId => {
-        const { [docId]: chat } = chats;
-        // If we have a conversationId, the match must include it.
-        return chat.endpointUrl === endpoint.endpoint && (!conversationId || chat.conversationId === conversationId);
-      });
-    }
-
-    if (!documentId) {
-      documentId = uniqueId();
-      const { currentUserId } = state.clientAwareSettings.users;
-      const customUserId = state.framework.userGUID;
-      const action = ChatActions.newChat(documentId, mode, {
-        botId: 'bot',
-        endpointId: endpoint.id,
-        endpointUrl: endpoint.endpoint,
-        userId: customUserId || currentUserId,
-        conversationId,
-        // directLine: createDirectLine({
-        //   secret: base64Url.encode(JSON.stringify({ conversationId, endpointId: endpoint.id })),
-        //   domain: `${ state.clientAwareSettings.serverUrl }/v3/directline`,
-        //   webSocket: false,
-        // })
-      });
-      if (mode === 'debug') {
-        action.payload.ui.horizontalSplitter[0].percentage = 75;
-        action.payload.ui.verticalSplitter[0].percentage = 25;
-      }
-      store.dispatch(action);
-    }
-
-    if (!isLocalHostUrl(endpoint.endpoint)) {
-      this.commandService.remoteCall(TrackEvent, 'livechat_openRemote').catch(_e => void 0);
-    }
-
+  protected newLiveChat(endpoint: IEndpointService, mode: EmulatorMode = 'livechat') {
+    // extract information normally used to start a conversation via URL
+    // and pass it through that flow
     store.dispatch(
-      EditorActions.open({
-        contentType: mode === 'debug' ? Constants.CONTENT_TYPE_DEBUG : Constants.CONTENT_TYPE_LIVE_CHAT,
-        documentId,
-        isGlobal: false,
+      openBotViaUrlAction({
+        appId: endpoint.appId,
+        appPassword: endpoint.appPassword,
+        channelService: endpoint.channelService as ChannelService,
+        endpoint: endpoint.endpoint,
+        mode,
       })
     );
-    return documentId;
+
+    // TODO: figure out how to swap in proper telemetry call for bots opened here via .bot file
+
+    // if (!isLocalHostUrl(endpoint.endpoint)) {
+    //   this.commandService.remoteCall(TrackEvent, 'livechat_openRemote').catch(_e => void 0);
+    // }
   }
 
   // ---------------------------------------------------------------------------

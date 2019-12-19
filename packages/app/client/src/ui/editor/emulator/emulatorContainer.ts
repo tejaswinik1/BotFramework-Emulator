@@ -40,7 +40,6 @@ import { Document } from '../../../state/reducers/editor';
 import { updateDocument } from '../../../state/actions/editorActions';
 import { beginAdd } from '../../../state/actions/notificationActions';
 import { executeCommand } from '../../../state/actions/commandActions';
-import { restartConversation as restartDebugSession } from '../../../state/actions/botActions';
 
 import { Emulator, EmulatorProps } from './emulator';
 
@@ -75,13 +74,8 @@ const mapDispatchToProps = (dispatch): EmulatorProps => ({
       executeCommand(true, SharedConstants.Commands.Emulator.SaveTranscriptToFile, null, valueTypes, conversationId)
     ),
   newConversation: (documentId, options) => dispatch(ChatActions.newConversation(documentId, options)),
-  restartConversation: (
-    documentId: string,
-    requireNewConversationId: boolean,
-    requireNewUserId: boolean,
-    resolver?: () => Promise<any>
-  ) => dispatch(ChatActions.restartConversation(documentId, requireNewConversationId, requireNewUserId, resolver)),
-  restartDebugSession: (conversationId, documentId) => dispatch(restartDebugSession(conversationId, documentId)),
+  restartConversation: (documentId: string, requireNewConversationId: boolean, requireNewUserId: boolean) =>
+    dispatch(ChatActions.restartConversation(documentId, requireNewConversationId, requireNewUserId)),
   setInspectorObjects: (documentId, objects) => dispatch(ChatActions.setInspectorObjects(documentId, objects)),
   trackEvent: (name: string, properties?: { [key: string]: any }) =>
     dispatch(executeCommand(true, SharedConstants.Commands.Telemetry.TrackEvent, null, name, properties)),

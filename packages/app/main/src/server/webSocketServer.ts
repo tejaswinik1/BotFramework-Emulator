@@ -34,6 +34,7 @@
 import { createServer, Server, Request, Response } from 'restify';
 import { Server as WSServer } from 'ws';
 
+// can't import WebSocket type from ws types :|
 interface WebSocket {
   close(): void;
   send(data: any, cb?: (err?: Error) => void): void;
@@ -73,10 +74,12 @@ export class WebSocketServer {
             // don't think we need to do anything here?
           });
           socket.on('close', (code, reason) => {
+            console.log('got close for ', conversationId);
             delete this._servers[conversationId];
             delete this._sockets[conversationId];
           });
         });
+        // upgrade the connection to a ws connection
         wsServer.handleUpgrade(req, socket, head, socket => {
           wsServer.emit('connection', socket, req);
         });

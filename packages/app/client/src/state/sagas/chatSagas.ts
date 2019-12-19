@@ -33,7 +33,7 @@
 import * as Electron from 'electron';
 import { MenuItemConstructorOptions } from 'electron';
 import { Activity } from 'botframework-schema';
-import { SharedConstants, ValueTypes, newNotification } from '@bfemulator/app-shared';
+import { SharedConstants, ValueTypes } from '@bfemulator/app-shared';
 import {
   CommandServiceImpl,
   CommandServiceInstance,
@@ -45,7 +45,7 @@ import {
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
 import { createStore as createWebChatStore } from 'botframework-webchat-core';
-import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
+import { call, ForkEffect, put, select, takeEvery } from 'redux-saga/effects';
 import { encode } from 'base64url';
 
 import {
@@ -57,14 +57,12 @@ import {
   webChatStoreUpdated,
   webSpeechFactoryUpdated,
   newConversation,
-  NewChatDocumentPayload,
   RestartConversationPayload,
   newChat,
   clearLog,
   setInspectorObjects,
 } from '../actions/chatActions';
 import { RootState } from '../store';
-import { isSpeechEnabled } from '../../utils';
 import { ChatDocument } from '../reducers/chat';
 
 const getConversationIdFromDocumentId = (state: RootState, documentId: string) => {
@@ -161,46 +159,43 @@ export class ChatSagas {
       })
     );
 
-    // if speech is not enabled, we are done
-    if (!msaAppId && !msaPassword) {
-      return;
+    // initialize speech
+    if (msaAppId && !msaPassword) {
+      // TODO: TEST SPEECH
+      // Get a token for speech and setup speech integration with Web Chat
+      yield put(updatePendingSpeechTokenRetrieval(documentId, true));
+      // If an existing factory is found, refresh the token
+      const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
+      const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
+
+      try {
+        const speechAuthenticationToken: Promise<string> = ChatSagas.commandService.remoteCall(
+          command,
+          endpointId,
+          !!existingFactory
+        );
+
+        const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
+          authorizationToken: speechAuthenticationToken,
+          region: 'westus', // Currently, the prod speech service is only deployed to westus
+        });
+
+        yield put(webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
+      } catch (e) {
+        // No-op - this appId/pass combo is not provisioned to use the speech api
+      }
+
+      yield put(updatePendingSpeechTokenRetrieval(documentId, false));
     }
-
-    // TODO: TEST SPEECH
-    // Get a token for speech and setup speech integration with Web Chat
-    yield put(updatePendingSpeechTokenRetrieval(true));
-    // If an existing factory is found, refresh the token
-    const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
-    const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
-
-    try {
-      const speechAuthenticationToken: Promise<string> = ChatSagas.commandService.remoteCall(
-        command,
-        endpointId,
-        !!existingFactory
-      );
-
-      const factory = yield call(createCognitiveServicesSpeechServicesPonyfillFactory, {
-        authorizationToken: speechAuthenticationToken,
-        region: 'westus', // Currently, the prod speech service is only deployed to westus
-      });
-
-      yield put(webSpeechFactoryUpdated(documentId, factory)); // Provide the new factory to the store
-    } catch (e) {
-      // No-op - this appId/pass combo is not provisioned to use the speech api
-    }
-
-    yield put(updatePendingSpeechTokenRetrieval(false));
   }
 
   public static *restartConversation(action: ChatAction<RestartConversationPayload>): Iterable<any> {
-    const { documentId, requireNewConversationId, requireNewUserId, resolver } = action.payload;
+    const { documentId, requireNewConversationId, requireNewUserId } = action.payload;
     const chat: ChatDocument = yield select(getChatFromDocumentId, documentId);
     const serverUrl = yield select(getServerUrl);
 
     if (chat.directLine) {
       chat.directLine.end();
-      chat.directLine = null;
     }
     yield put(clearLog(documentId));
     yield put(setInspectorObjects(documentId, []));
@@ -221,7 +216,7 @@ export class ChatSagas {
     if (requireNewConversationId) {
       conversationId = `${uniqueId()}|${chat.mode}`;
     } else {
-      // perserve the current conversation id
+      // preserve the current conversation id
       conversationId = chat.conversationId || `${uniqueId()}|${chat.mode}`;
     }
 
@@ -255,16 +250,17 @@ export class ChatSagas {
     // send CU
     yield ChatSagas.sendInitialActivities({ conversationId, members, mode: chat.mode });
 
+    // initialize speech
     if (botEndpoint.msaAppId && botEndpoint.msaPassword) {
       // Get a token for speech and setup speech integration with Web Chat
-      yield put(updatePendingSpeechTokenRetrieval(true));
+      yield put(updatePendingSpeechTokenRetrieval(documentId, true));
       // If an existing factory is found, refresh the token
       const existingFactory: string = yield select(getWebSpeechFactoryForDocumentId, documentId);
-      const { GetSpeechToken: command } = SharedConstants.Commands.Emulator;
+      const { GetSpeechToken } = SharedConstants.Commands.Emulator;
 
       try {
         const speechAuthenticationToken: Promise<string> = ChatSagas.commandService.remoteCall(
-          command,
+          GetSpeechToken,
           botEndpoint.id,
           !!existingFactory
         );
@@ -279,13 +275,7 @@ export class ChatSagas {
         // No-op - this appId/pass combo is not provisioned to use the speech api
       }
 
-      yield put(updatePendingSpeechTokenRetrieval(false));
-    } else {
-      // the endpoint is not enabled for speech; we are done
-      if (resolver) {
-        resolver();
-      }
-      return;
+      yield put(updatePendingSpeechTokenRetrieval(documentId, false));
     }
   }
 

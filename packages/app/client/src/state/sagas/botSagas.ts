@@ -31,8 +31,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { newNotification, ResourceResponse, SharedConstants, UserSettings } from '@bfemulator/app-shared';
-import { IEndpointService } from 'botframework-config';
+import { newNotification, SharedConstants } from '@bfemulator/app-shared';
 import {
   CommandServiceImpl,
   CommandServiceInstance,
@@ -44,23 +43,22 @@ import {
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
 
 import { ActiveBotHelper } from '../../ui/helpers/activeBotHelper';
-import {
-  BotAction,
-  BotActionType,
-  BotConfigWithPathPayload,
-  botHashGenerated,
-  openBotViaUrlAction,
-  RestartConversationPayload,
-} from '../actions/botActions';
+import { BotAction, BotActionType, BotConfigWithPathPayload, botHashGenerated } from '../actions/botActions';
 import { beginAdd } from '../actions/notificationActions';
 import { generateHash } from '../helpers/botHelpers';
 import { RootState } from '../store';
-import * as ChatActions from '../actions/chatActions';
-import { ChatDocument } from '../reducers/chat';
 
 import { SharedSagas } from './sharedSagas';
 import { open } from '../actions/editorActions';
 import { ChatSagas } from './chatSagas';
+
+const getServerUrl = (state: RootState): string => {
+  return state.clientAwareSettings.serverUrl;
+};
+
+const getCustomUserGUID = (state: RootState): string => {
+  return state.framework.userGUID;
+};
 
 export class BotSagas {
   @CommandServiceInstance()
@@ -87,66 +85,13 @@ export class BotSagas {
     }
   }
 
-  // Currently restarts a conversation with an unchanged ID
-  public static *restartConversation(action: BotAction<RestartConversationPayload>): IterableIterator<any> {
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
-    const { documentId, conversationId } = action.payload;
-    let error;
-    try {
-      const endpointResponse: Response = yield ConversationService.getConversationEndpoint(serverUrl, conversationId);
-      if (!endpointResponse.ok) {
-        const error = yield endpointResponse.json();
-        throw new Error(error.error.message);
-      }
-
-      //const endpoint: IEndpointService = yield endpointResponse.json();
-
-      const document: ChatDocument = yield select((state: RootState) => state.chat.chats[documentId]);
-      // End the direct line connection
-      if (document.directLine) {
-        document.directLine.end();
-      }
-      document.directLine = null;
-      yield put(ChatActions.clearLog(documentId));
-      // Restart the conversation. This is an async
-      // saga and is critical to wait for completion
-      // until the next item is processed.
-      let resolver = null;
-      const awaiter = new Promise(resolve => {
-        resolver = resolve;
-      });
-      yield put(ChatActions.restartConversation(documentId, false, false, resolver));
-      yield awaiter;
-
-      yield put(ChatActions.setInspectorObjects(documentId, []));
-
-      // yield* BotSagas.openBotViaUrl(
-      //   openBotViaUrlAction({
-      //     conversationId,
-      //     appPassword: endpoint.appPassword,
-      //     appId: endpoint.appId,
-      //     endpoint: endpoint.endpoint,
-      //     mode: document.mode,
-      //     user,
-      //   })
-      // );
-    } catch (e) {
-      error = '' + e;
-    }
-
-    if (error) {
-      const errorNotification = beginAdd(newNotification(error));
-      yield put(errorNotification);
-    }
-  }
-
   public static *openBotViaUrl(action: BotAction<StartConversationParams>): Iterable<any> {
     const user = {
-      id: yield select((state: RootState) => state.framework.userGUID) || uniqueIdv4(), // use custom id or generate new one
+      id: yield select(getCustomUserGUID) || uniqueIdv4(), // use custom id or generate new one
       name: 'User',
       role: 'user',
     };
-    const serverUrl = yield select((state: RootState) => state.clientAwareSettings.serverUrl);
+    const serverUrl = yield select(getServerUrl);
     const payload = {
       botUrl: action.payload.endpoint,
       channelServiceType: action.payload.channelService,
@@ -217,7 +162,6 @@ export function* botSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(BotActionType.browse, BotSagas.browseForBot);
   yield takeEvery(BotActionType.openViaUrl, BotSagas.openBotViaUrl);
   yield takeEvery(BotActionType.openViaFilePath, BotSagas.openBotViaFilePath);
-  yield takeEvery(BotActionType.restartConversation, BotSagas.restartConversation);
   yield takeEvery(BotActionType.setActive, BotSagas.generateHashForActiveBot);
   yield takeLatest(
     [BotActionType.setActive, BotActionType.load, BotActionType.close],

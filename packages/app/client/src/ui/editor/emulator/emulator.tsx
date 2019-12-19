@@ -32,20 +32,12 @@
 //
 
 import { Activity } from 'botframework-schema';
-//import { createDirectLine } from 'botframework-webchat';
 import { DirectLine } from 'botframework-directlinejs';
 import { isMac } from '@bfemulator/app-shared';
-import { CommandServiceImpl, CommandServiceInstance, EmulatorMode, uniqueId, uniqueIdv4 } from '@bfemulator/sdk-shared';
+import { EmulatorMode } from '@bfemulator/sdk-shared';
 import { SplitButton, Splitter } from '@bfemulator/ui-react';
-import base64Url from 'base64url';
 import * as React from 'react';
-import {
-  FrameworkSettings,
-  newNotification,
-  Notification,
-  // SharedConstants,
-  ValueTypesMask,
-} from '@bfemulator/app-shared';
+import { FrameworkSettings, newNotification, Notification, ValueTypesMask } from '@bfemulator/app-shared';
 
 import { Document, SplitterSize } from '../../../state/reducers/editor';
 import { debounce } from '../../../utils';
@@ -56,8 +48,6 @@ import PlaybackBar from './playbackBar/playbackBar';
 import * as styles from './emulator.scss';
 import { InspectorContainer } from './parts';
 import { ToolBar } from './toolbar/toolbar';
-
-const { encode } = base64Url;
 
 export const RestartConversationOptions = {
   NewUserId: 'Restart with new user ID',
@@ -82,12 +72,7 @@ export interface EmulatorProps {
   mode?: EmulatorMode;
   newConversation?: (documentId: string, options: any) => void;
   presentationModeEnabled?: boolean;
-  restartConversation?: (
-    documentId: string,
-    requireNewConversationId: boolean,
-    requireNewUserId: boolean,
-    resolver?: () => Promise<any>
-  ) => void;
+  restartConversation?: (documentId: string, requireNewConversationId: boolean, requireNewUserId: boolean) => void;
   restartDebugSession?: (conversationId: string, documentId: string) => void;
   setInspectorObjects?: (documentId: string, objects: any) => void;
   trackEvent?: (name: string, properties?: { [key: string]: any }) => void;
@@ -99,9 +84,6 @@ export interface EmulatorProps {
 }
 
 export class Emulator extends React.Component<EmulatorProps, {}> {
-  //@CommandServiceInstance()
-  // private commandService: CommandServiceImpl;
-  // private conversationInitRequested: boolean;
   private restartButtonRef: HTMLButtonElement;
 
   private readonly onVerticalSizeChange = debounce((sizes: SplitterSize[]) => {
@@ -118,10 +100,6 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
     };
   }, 500);
 
-  shouldStartNewConversation(props: EmulatorProps = this.props): boolean {
-    return !props.directLine || props.conversationId !== (props.directLine as any).conversationId;
-  }
-
   componentDidMount() {
     if (this.restartButtonRef) {
       this.restartButtonRef.focus();
@@ -130,150 +108,11 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
 
   componentWillMount() {
     window.addEventListener('keydown', this.keyboardEventListener);
-    // if (this.shouldStartNewConversation()) {
-    //   this.startNewConversation();
-    // }
   }
 
   componentWillUnmount() {
     window.removeEventListener('keydown', this.keyboardEventListener);
   }
-
-  /*componentWillReceiveProps(nextProps: EmulatorProps) {
-    const { props, keyboardEventListener } = this;
-    const { activeDocumentId, documentId } = props;
-    const { directLine, documentId: nextDocumentId } = nextProps;
-
-    const documentIdChanged = !directLine || documentId !== nextDocumentId;
-
-    if (documentIdChanged) {
-      //startNewConversation(nextProps).catch();
-    }
-    const switchedDocuments = activeDocumentId !== nextProps.activeDocumentId;
-    const switchedToThisDocument = nextProps.activeDocumentId === documentId;
-
-    // TODO: get rid of this stuff (entire function actually) and just make sure the
-    // current active document / editor combo is this component before firing any keybinds
-    if (switchedDocuments) {
-      if (switchedToThisDocument) {
-        window.addEventListener('keydown', keyboardEventListener);
-      } else {
-        window.removeEventListener('keydown', keyboardEventListener);
-      }
-    }
-  }*/
-
-  /*startNewConversation = async (
-    props: EmulatorProps = this.props,
-    requireNewConvoId: boolean = false,
-    requireNewUserId: boolean = false
-  ): Promise<any> => {
-    if (this.conversationInitRequested) {
-      return;
-    }
-    this.conversationInitRequested = true;
-
-    // Look for an existing conversation ID and use that,
-    // otherwise, create a new one
-    const conversationId = requireNewConvoId
-      ? `${uniqueId()}|${props.mode}`
-      : props.conversationId || `${uniqueId()}|${props.mode}`;
-
-    let userId;
-    if (requireNewUserId) {
-      userId = uniqueIdv4();
-    } else {
-      // use the previous id, or custom id
-      const { framework = {} } = this.props;
-      userId = props.userId || framework.userGUID;
-    }
-    await this.commandService.remoteCall(SharedConstants.Commands.Emulator.SetCurrentUser, userId);
-
-    const options = {
-      conversationId,
-      mode: props.mode,
-      endpointId: props.endpointId,
-      userId,
-    };
-
-    this.initConversation(props, options);
-
-    if (props.mode === 'transcript') {
-      try {
-        const conversation = await this.commandService.remoteCall<any>(
-          SharedConstants.Commands.Emulator.NewTranscript,
-          conversationId
-        );
-        if (props.documentId && props.inMemory && props.activities) {
-          try {
-            // transcript was deep linked via protocol or is generated in-memory via chatdown,
-            // and should just be fed its own activities attached to the document
-            await this.commandService.remoteCall<any>(
-              SharedConstants.Commands.Emulator.FeedTranscriptFromMemory,
-              conversation.conversationId,
-              props.botId,
-              props.userId,
-              props.activities
-            );
-          } catch (err) {
-            throw new Error(`Error while feeding deep-linked transcript to conversation: ${err}`);
-          }
-        } else {
-          try {
-            // the transcript is on disk, so its activities need to be read on the main side and fed in
-            const fileInfo: {
-              fileName: string;
-              filePath: string;
-            } = await this.commandService.remoteCall<any>(
-              SharedConstants.Commands.Emulator.FeedTranscriptFromDisk,
-              conversation.conversationId,
-              props.botId,
-              props.userId,
-              props.documentId
-            );
-
-            this.props.updateDocument(props.documentId, fileInfo);
-          } catch (err) {
-            throw new Error(`Error while feeding transcript on disk to conversation: ${err}`);
-          }
-        }
-      } catch (err) {
-        const errMsg = `Error creating a new conversation in transcript mode: ${err}`;
-        const notification = newNotification(errMsg);
-        this.props.createErrorNotification(notification);
-      }
-    }
-    this.conversationInitRequested = false;
-  };*/
-
-  /*initConversation(props: EmulatorProps, options: any): void {
-    const encodedOptions = encode(JSON.stringify(options));
-
-    // TODO: We need to use encoded token because we need to pass both endpoint ID and conversation ID
-    //       We should think about a better model to pass conversation ID from Web Chat to emulator core
-    // const directLine = createDirectLine({
-    //   secret: encodedOptions,
-    //   domain: `${this.props.url}/v3/directline`,
-    //   webSocket: false,
-    // });
-
-    const directLine = createDirectLine({
-      token: 'mytoken',
-      conversationId: options.conversationId,
-      secret: encodedOptions,
-      domain: `${this.props.url}/v3/directline`,
-      webSocket: true,
-      streamUrl: 'ws://localhost:5005',
-    });
-
-    this.props.newConversation(props.documentId, {
-      conversationId: options.conversationId,
-      // webChatStore,
-      directLine,
-      userId: options.userId,
-      mode: options.mode,
-    });
-  }*/
 
   render(): JSX.Element {
     return this.props.presentationModeEnabled ? this.renderPresentationView() : this.renderDefaultView();
@@ -391,12 +230,7 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
 
   private onStartOverClick = async (option: string = RestartConversationOptions.NewUserId): Promise<void> => {
     const { NewUserId, SameUserId } = RestartConversationOptions;
-    const { directLine, documentId } = this.props;
-    this.props.setInspectorObjects(documentId, []);
-    if (directLine) {
-      directLine.end();
-    }
-    this.props.clearLog(documentId);
+    const { documentId } = this.props;
 
     switch (option) {
       case NewUserId: {
@@ -404,7 +238,6 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
           userId: 'new',
         });
         // start conversation with new convo id & user id
-        //await this.startNewConversation(undefined, true, true);
         this.props.restartConversation(documentId, true, true);
         break;
       }
@@ -414,7 +247,6 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
           userId: 'same',
         });
         // start conversation with new convo id
-        //await this.startNewConversation(undefined, true, false);
         this.props.restartConversation(documentId, true, false);
         break;
       }
@@ -443,8 +275,8 @@ export class Emulator extends React.Component<EmulatorProps, {}> {
   };
 
   private onReconnectToDebugBotClick = () => {
-    const { conversationId, documentId } = this.props;
-    this.props.restartDebugSession(conversationId, documentId);
+    const { documentId } = this.props;
+    this.props.restartConversation(documentId, true, false);
   };
 
   private setRestartButtonRef = (ref: HTMLButtonElement): void => {

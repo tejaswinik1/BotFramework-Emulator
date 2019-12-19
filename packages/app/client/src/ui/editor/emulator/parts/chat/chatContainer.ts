@@ -57,7 +57,6 @@ const mapStateToProps = (state: RootState, { documentId }): Partial<ChatProps> =
     currentUser: { id: currentUserId, name: 'User' } as User,
     locale: state.clientAwareSettings.locale || 'en-us',
     webSpeechPonyfillFactory: state.chat.webSpeechFactories[documentId],
-    pendingSpeechTokenRetrieval: state.chat.pendingSpeechTokenRetrieval,
     webchatStore: state.chat.webChatStores[documentId],
   };
 };

@@ -126,7 +126,11 @@ export class EmulatorCommands {
       const { ShowOpenDialog } = SharedConstants.Commands.Electron;
       const filename = await this.commandService.remoteCall(ShowOpenDialog, dialogOptions);
       if (filename) {
-        await this.commandService.call(Emulator.OpenTranscript, filename);
+        //await this.commandService.call(Emulator.OpenTranscript, filename);
+        store.dispatch({
+          type: 'OPEN_TRANSCRIPT',
+          payload: filename,
+        });
         this.commandService
           .remoteCall(TrackEvent, 'transcriptFile_open', {
             method: 'file_menu',

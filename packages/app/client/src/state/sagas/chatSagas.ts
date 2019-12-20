@@ -41,6 +41,7 @@ import {
   uniqueIdv4,
   uniqueId,
   EmulatorMode,
+  User,
 } from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
@@ -62,6 +63,7 @@ import {
   clearLog,
   setInspectorObjects,
 } from '../actions/chatActions';
+import { open as openDocument } from '../actions/editorActions';
 import { RootState } from '../store';
 import { ChatDocument } from '../reducers/chat';
 
@@ -137,6 +139,76 @@ export class ChatSagas {
     // remove the webchat store when the document is closed
     yield put(webChatStoreUpdated(documentId, null));
     yield call([ChatSagas.commandService, ChatSagas.commandService.remoteCall], DeleteConversation, conversationId);
+  }
+
+  public static *newTranscript(action: { type: string; payload: string }): Iterable<any> {
+    const path = action.payload;
+    // start a conversation
+    const serverUrl = yield select(getServerUrl);
+    const user = { id: yield select(getCustomUserGUID) || uniqueIdv4(), name: 'User', role: 'user' };
+    const payload2 = {
+      botUrl: '',
+      channelServiceType: '' as any,
+      members: [user],
+      mode: 'transcript' as EmulatorMode,
+      msaAppId: '',
+      msaPassword: '',
+    };
+    let res: Response = yield ConversationService.startConversationV2(serverUrl, payload2);
+    if (!res.ok) {
+      // error handling here
+    }
+    const {
+      conversationId,
+      endpointId,
+    }: //members,
+    { conversationId: string; endpointId: string; members: User[] } = yield res.json();
+    const documentId = `${conversationId}`;
+
+    // extract activities from the file and feed them into the conversation
+    let activities;
+    if (path.endsWith('.chat')) {
+      // use chatdown to extract activities
+      // activities = useChatDown();
+    }
+    const result: any = yield ChatSagas.commandService.remoteCall(
+      SharedConstants.Commands.Emulator.FeedTranscriptFromDisk,
+      path
+    );
+    activities = result.activities;
+
+    // put the chat document into the store
+    yield ChatSagas.newChat({
+      conversationId,
+      documentId,
+      endpointId,
+      mode: 'transcript',
+      user,
+    });
+
+    // feed activities into the conversation
+    res = yield fetch(`${serverUrl}/emulator/${conversationId}/transcript`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(activities),
+    });
+    if (!res.ok) {
+      // error handling
+    }
+
+    // open a document to render the transcript
+    yield put(
+      openDocument({
+        contentType: SharedConstants.ContentTypes.CONTENT_TYPE_TRANSCRIPT,
+        documentId,
+        fileName: path,
+        isGlobal: false,
+      })
+    );
+
+    // TODO: telemetry
   }
 
   public static *newChat(payload: any): Iterable<any> {
@@ -339,4 +411,5 @@ export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
   yield takeEvery(ChatActions.restartConversation, ChatSagas.restartConversation);
+  yield takeEvery('OPEN_TRANSCRIPT', ChatSagas.newTranscript);
 }

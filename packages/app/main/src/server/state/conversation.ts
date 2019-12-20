@@ -685,6 +685,73 @@ export class Conversation extends EventEmitter {
     });
   }
 
+  public prepTranscriptActivities(activities: Activity[]): Activity[] {
+    /*
+     * We need to fixup the activities to look like they're part of the current conversation.
+     * This a limitation of the way the emulator was originally designed, and not a problem
+     * with the transcript data. In the fullness of time, the emulator (and webchat control)
+     * could be better adapted to loading transcripts.
+     * */
+
+    const { id: currUserId } = this.user;
+    let origUserId = null;
+    let origBotId = null;
+
+    // Get original botId and userId
+    // Fixup conversationId
+    activities.forEach(activity => {
+      if (activity.conversation) {
+        activity.conversation.id = this.conversationId;
+      }
+
+      const { type } = activity;
+
+      if (
+        activity.recipient &&
+        (type === 'event' || type === 'message' || type === 'messageReaction' || type === 'typing')
+      ) {
+        if (!origBotId && activity.recipient.role === 'bot') {
+          origBotId = activity.recipient.id;
+        }
+
+        if (!origUserId && activity.recipient.role === 'user') {
+          origUserId = activity.recipient.id;
+        }
+      }
+    });
+
+    // Fixup recipient and from ids
+    if (this.botEndpoint && origUserId && origBotId) {
+      activities.forEach(activity => {
+        if (activity.recipient.id === origBotId) {
+          activity.recipient.id = this.botEndpoint.botId;
+        }
+
+        if (activity.from.id === origBotId) {
+          activity.from.id = this.botEndpoint.botId;
+        }
+
+        if (activity.recipient.id === origUserId) {
+          activity.recipient.id = currUserId;
+        }
+
+        if (activity.from.id === origUserId) {
+          activity.from.id = currUserId;
+        }
+      });
+    }
+    return activities;
+
+    // Add activities to the queue
+    // activities.forEach(activity => {
+    //   if (activity.recipient && activity.recipient.role === 'user') {
+    //     activity = this.processActivity(activity);
+    //   }
+
+    //   this.addActivityToQueue(activity);
+    // });
+  }
+
   /**
    * Gets the transcript, extracting values based on
    * the (optional) valueTypesToExtract bitmask. If the valueTypesToExtract is

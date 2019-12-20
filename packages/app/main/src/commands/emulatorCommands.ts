@@ -126,7 +126,8 @@ export class EmulatorCommands {
   // ---------------------------------------------------------------------------
   // Feeds a transcript from disk to a conversation
   @Command(Commands.FeedTranscriptFromDisk)
-  protected async fedTranscriptFromDisk(conversationId: string, botId: string, userId: string, filePath: string) {
+  //protected async fedTranscriptFromDisk(conversationId: string, botId: string, userId: string, filePath: string) {
+  protected async fedTranscriptFromDisk(filePath: string) {
     const transcriptPath = path.resolve(filePath);
     const stat = await fs.stat(transcriptPath);
 
@@ -135,16 +136,23 @@ export class EmulatorCommands {
     }
 
     const activities = JSON.parse(readFileSync(transcriptPath));
-
-    await this.commandService.call(Commands.FeedTranscriptFromMemory, conversationId, botId, userId, activities);
-
     const { name, ext } = path.parse(transcriptPath);
     const fileName = `${name}${ext}`;
-
     return {
+      activities,
       fileName,
       filePath,
     };
+
+    // await this.commandService.call(Commands.FeedTranscriptFromMemory, conversationId, botId, userId, activities);
+
+    // const { name, ext } = path.parse(transcriptPath);
+    // const fileName = `${name}${ext}`;
+
+    // return {
+    //   fileName,
+    //   filePath,
+    // };
   }
 
   // ---------------------------------------------------------------------------

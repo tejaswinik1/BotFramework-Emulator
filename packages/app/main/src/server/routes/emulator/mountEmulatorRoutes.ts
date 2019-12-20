@@ -49,6 +49,8 @@ import { updateShippingAddress } from './handlers/updateShippingAddress';
 import { updateShippingOption } from './handlers/updateShippingOption';
 import { createGetConversationEndpointHandler } from './handlers/getConversationEndpoint';
 import { Emulator } from '../../../emulator';
+import { Conversation } from '../../state/conversation';
+import { WebSocketServer } from '../../webSocketServer';
 //import { WebSocketServer } from '../../webSocketServer';
 
 export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
@@ -137,6 +139,22 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
     const { conversationId } = req.params;
     emulatorServer.report(conversationId);
     Emulator.getInstance().ngrok.report(conversationId, botUrl);
+
+    res.send(200);
+    res.end();
+    next();
+  });
+
+  // TODO: move to separate file
+  server.post('/emulator/:conversationId/transcript', jsonBodyParser, (req, res, next) => {
+    const { conversationId } = req.params;
+    let activities = req.body;
+    const conversation: Conversation = emulatorServer.state.conversations.conversationById(conversationId);
+    activities = conversation.prepTranscriptActivities(activities);
+    const payload = { activities };
+    const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
+    socket && socket.send(JSON.stringify(payload));
+    //conversation.emulatorServer.logger.logActivity(conversation.conversationId, activity, activity.recipient.role);
 
     res.send(200);
     res.end();

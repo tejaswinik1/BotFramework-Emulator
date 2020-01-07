@@ -107,7 +107,6 @@ export const SharedConstants = {
       PromptToOpenTranscript: 'transcript:prompt-open',
       ReloadTranscript: 'transcript:reload',
       AppendToLog: 'log:append',
-      SetCurrentUser: 'emulator:set-current-user',
       DeleteConversation: 'emulator:delete-conversation',
       PostActivityToConversation: 'emulator:post-activity',
       StartEmulator: 'emulator:start',

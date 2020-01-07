@@ -577,7 +577,7 @@ export class Conversation extends EventEmitter {
         channelId: 'emulator',
         conversation: { id: this.conversationId } as ConversationAccount,
         serviceUrl: await this.emulatorServer.getServiceUrl(this.botEndpoint.botUrl),
-        user: this.emulatorServer.state.users.usersById(this.emulatorServer.state.users.currentUserId),
+        user: undefined, // this code is never used and will be removed soon (https://github.com/microsoft/BotFramework-Emulator/issues/2033)
       },
       value: updateValue,
     } as IInvokeActivity;
@@ -588,7 +588,7 @@ export class Conversation extends EventEmitter {
   }
 
   public async sendTokenResponse(connectionName: string, token: string, doNotCache?: boolean) {
-    const userId = this.emulatorServer.state.users.currentUserId;
+    const userId = this.user.id;
 
     if (!doNotCache) {
       TokenCache.addTokenToCache(this.botEndpoint.botId, userId, connectionName, token);
@@ -810,7 +810,7 @@ export class Conversation extends EventEmitter {
         channelId: 'emulator',
         conversation: { id: this.conversationId },
         serviceUrl: await this.emulatorServer.getServiceUrl(this.botEndpoint.botUrl),
-        user: this.emulatorServer.state.users.usersById(this.emulatorServer.state.users.currentUserId),
+        user: undefined, // this code is never used and will be removed soon (https://github.com/microsoft/BotFramework-Emulator/issues/2033)
       },
       value: updateValue,
     } as IInvokeActivity;

@@ -47,7 +47,7 @@ import { Chat, ChatProps } from './chat';
 
 const mapStateToProps = (state: RootState, { documentId }): Partial<ChatProps> => {
   const currentChat = state.chat.chats[documentId];
-  const currentUserId = currentChat.userId || state.clientAwareSettings.users.currentUserId;
+  const currentUserId = currentChat.userId || '';
 
   return {
     botId: currentChat.botId,

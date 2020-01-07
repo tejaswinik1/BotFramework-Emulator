@@ -68,7 +68,6 @@ import {
   savedBotUrls,
   theme,
   update,
-  users,
   windowState,
   ChatState,
   DialogState,
@@ -117,7 +116,6 @@ function initStore(): Store<RootState> {
     framework,
     savedBotUrls,
     windowState,
-    users,
   });
 
   const sagaMiddleware = sagaMiddlewareFactory();

@@ -49,18 +49,15 @@ import * as BotActions from '../state/actions/botActions';
 import { BotHelpers } from '../botHelpers';
 import { Emulator } from '../emulator';
 import { emulatorApplication } from '../main';
-import { dispatch, store, getSettings } from '../state/store';
+import { store, getSettings } from '../state/store';
 import { parseActivitiesFromChatFile, readFileSync, showSaveDialog, writeFile } from '../utils';
 import { CustomActivity } from '../utils/conversation';
 import { botProjectFileWatcher } from '../watchers';
 import { TelemetryService } from '../telemetry';
-import { setCurrentUser } from '../state/actions/userActions';
-import { pushClientAwareSettings } from '../state/actions/frameworkSettingsActions';
 import { ProtocolHandler } from '../protocolHandler';
 import { CredentialManager } from '../credentialManager';
 import { getCurrentConversationId } from '../state/helpers/chatHelpers';
 import { getLocalhostServiceUrl } from '../utils/getLocalhostServiceUrl';
-import { Users } from '../server/state/users';
 
 const Commands = SharedConstants.Commands.Emulator;
 
@@ -160,22 +157,6 @@ export class EmulatorCommands {
   }
 
   // ---------------------------------------------------------------------------
-  // Sets the current user id (in memory)
-  @Command(Commands.SetCurrentUser)
-  protected async setCurrentUser(userId: string) {
-    const emulator = Emulator.getInstance();
-    const { users } = emulator.server.state;
-    const user = { id: userId, name: 'User' };
-    users.currentUserId = userId;
-    users.users[userId] = user;
-    emulator.server.state.users = users;
-
-    // update the settings state on both main and client
-    dispatch(setCurrentUser(user));
-    dispatch(pushClientAwareSettings());
-  }
-
-  // ---------------------------------------------------------------------------
   // Removes the conversation from the conversation set
   @Command(Commands.DeleteConversation)
   protected deleteConversation(conversationId: string) {
@@ -201,14 +182,10 @@ export class EmulatorCommands {
       return;
     }
     await emulator.startup();
-    const { users: userSettings, framework } = getSettings();
-    const users = new Users();
-    users.currentUserId = userSettings.currentUserId;
-    users.users = userSettings.usersById;
+    const { framework } = getSettings();
 
     const { state } = emulator.server;
     state.locale = framework.locale;
-    state.users = users;
   }
 
   @Command(Commands.OpenProtocolUrls)

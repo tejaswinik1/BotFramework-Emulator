@@ -41,52 +41,10 @@ export function createGetBotEndpointHandler(state: ServerState) {
   return (req: Request, res: Response, next: Next): any => {
     const request = req as any;
     const { endpoints } = state;
-    /**
-     * IF query params exist, the call is creating a
-     * conversation independent from a bot file.
-     */
-    if (req.headers && 'x-emulator-botendpoint' in req.headers) {
-      const {
-        'x-emulator-appid': msaAppId = '',
-        'x-emulator-apppassword': msaPassword = '',
-        'x-emulator-botendpoint': botUrl,
-        'x-emulator-channelservice': channelServiceType,
-      } = req.headers as { [prop: string]: string };
 
-      const channelService =
-        channelServiceType === 'azureusgovernment'
-          ? usGovernmentAuthentication.channelService
-          : authentication.channelService;
-
-      let endpoint = endpoints.get(botUrl);
-      if (!endpoint) {
-        const params = req.body as any;
-        endpoint = endpoints.set(
-          null,
-          new BotEndpoint(params.bot.id, params.bot.id, botUrl, msaAppId, msaPassword, false, channelService)
-        );
-      } else {
-        // update the endpoint in memory with the
-        // appId and password passed in the params
-        endpoint.msaAppId = msaAppId;
-        endpoint.msaPassword = msaPassword;
-      }
-      request.botEndpoint = endpoint;
-    } else {
+    if (request.jwt && request.jwt.appid) {
       request.botEndpoint = endpoints.getByAppId(request.jwt.appid);
-    }
-
-    next();
-  };
-}
-
-export function createGetBotEndpointHandlerV2(state: ServerState) {
-  return (req: Request, res: Response, next: Next): any => {
-    const request = req as any;
-    const { endpoints } = state;
-
-    if (req.headers && 'x-emulator-no-bot-file' in req.headers) {
-      // msa id, msa pw, url, channelServiceType, botId
+    } else {
       const { bot, botUrl, channelServiceType, msaAppId, msaPassword } = req.body;
       let endpoint = endpoints.get(botUrl);
       if (!endpoint) {
@@ -105,8 +63,6 @@ export function createGetBotEndpointHandlerV2(state: ServerState) {
         endpoint.msaPassword = msaPassword;
       }
       request.botEndpoint = endpoint;
-    } else {
-      request.botEndpoint = endpoints.getByAppId(request.jwt.appid);
     }
 
     next();

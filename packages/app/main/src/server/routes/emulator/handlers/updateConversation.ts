@@ -31,52 +31,41 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { BAD_REQUEST, CREATED } from 'http-status-codes';
 import { Next, Request, Response } from 'restify';
+import { NOT_FOUND, OK } from 'http-status-codes';
 
-import { BotEndpoint } from '../../../../state/botEndpoint';
-import { EmulatorRestServer } from '../../../../restServer';
+import { ServerState } from '../../../state/serverState';
 
-function validateRequest(payload): any {
-  if (!payload.bot) {
-    return new Error('Missing bot object in request.');
-  } else if (!payload.botEndpoint) {
-    return new Error('Missing botEndpoint object in request.');
-  } else if (payload.members.length !== 1 || payload.members[0].role !== 'user') {
-    return new Error('Missing user inside of members array in request.');
-  }
-  return undefined;
-}
-
-export function createCreateConversationHandler(emulatorServer: EmulatorRestServer) {
+/* updates the conversation object */
+export function createUpdateConversationHandler(state: ServerState) {
   return (req: Request, res: Response, next: Next): any => {
-    const validationResult = validateRequest({
-      ...req.body,
-      botEndpoint: (req as any).botEndpoint,
-    });
-    if (validationResult) {
-      res.send(BAD_REQUEST, validationResult);
-      res.end();
+    const currentConversationId = req.params.conversationId;
+    const { conversationId, userId } = req.body;
+    const currentConversation = state.conversations.conversationById(currentConversationId);
+    if (!currentConversationId) {
+      res.send(NOT_FOUND);
       return next();
     }
 
-    const { members, mode } = req.body;
-    const { botEndpoint }: { botEndpoint: BotEndpoint } = req as any;
-    const { conversations } = emulatorServer.state;
+    // update the conversation object and reset as much as we can to resemble a new conversation
+    state.conversations.deleteConversation(currentConversationId);
+    currentConversation.conversationId = conversationId;
+    currentConversation.user.id = userId;
+    const user = currentConversation.members.find(member => member.name === 'User');
+    user.id = userId;
+    currentConversation.normalize();
+    currentConversation.nextWatermark = 0;
+    state.conversations.conversations[conversationId] = currentConversation;
 
-    const conversation = conversations.newConversation(
-      emulatorServer,
-      botEndpoint,
-      members[0],
-      undefined, // generate a conversation id
-      mode
-    );
-    res.send(CREATED, {
-      conversationId: conversation.conversationId,
-      endpointId: botEndpoint.id,
-      members: conversation.members,
+    res.send(OK, {
+      // can't return the conversation object because event emitters are circular JSON
+      botEndpoint: currentConversation.botEndpoint,
+      conversationId: currentConversation.conversationId,
+      user: currentConversation.user,
+      mode: currentConversation.mode,
+      members: currentConversation.members,
+      nextWatermark: currentConversation.nextWatermark,
     });
-    res.end();
     next();
   };
 }

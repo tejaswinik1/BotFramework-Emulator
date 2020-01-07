@@ -43,7 +43,6 @@ import {
   EmulatorMode,
   User,
 } from '@bfemulator/sdk-shared';
-import { IEndpointService } from 'botframework-config/lib/schema';
 import { createCognitiveServicesSpeechServicesPonyfillFactory, createDirectLine } from 'botframework-webchat';
 import { createStore as createWebChatStore } from 'botframework-webchat-core';
 import { call, ForkEffect, put, select, takeEvery } from 'redux-saga/effects';
@@ -57,11 +56,11 @@ import {
   updatePendingSpeechTokenRetrieval,
   webChatStoreUpdated,
   webSpeechFactoryUpdated,
-  newConversation,
   RestartConversationPayload,
   newChat,
   clearLog,
   setInspectorObjects,
+  OpenTranscriptPayload,
 } from '../actions/chatActions';
 import { open as openDocument } from '../actions/editorActions';
 import { RootState } from '../store';
@@ -75,13 +74,6 @@ const getWebSpeechFactoryForDocumentId = (state: RootState, documentId: string):
   return state.chat.webSpeechFactories[documentId];
 };
 
-const getEndpointServiceByDocumentId = (state: RootState, documentId: string): IEndpointService => {
-  const chat = state.chat.chats[documentId];
-  return ((state.bot.activeBot && state.bot.activeBot.services) || []).find(
-    s => s.id === chat.endpointId
-  ) as IEndpointService;
-};
-
 const getChatFromDocumentId = (state: RootState, documentId: string): ChatDocument => {
   return state.chat.chats[documentId];
 };
@@ -93,6 +85,16 @@ const getCustomUserGUID = (state: RootState): string => {
 const getServerUrl = (state: RootState): string => {
   return state.clientAwareSettings.serverUrl;
 };
+
+interface BootstrapChatPayload {
+  conversationId: string;
+  documentId: string;
+  endpointId: string;
+  mode: EmulatorMode;
+  msaAppId?: string;
+  msaPassword?: string;
+  user: User;
+}
 
 export class ChatSagas {
   @CommandServiceInstance()
@@ -141,8 +143,8 @@ export class ChatSagas {
     yield call([ChatSagas.commandService, ChatSagas.commandService.remoteCall], DeleteConversation, conversationId);
   }
 
-  public static *newTranscript(action: { type: string; payload: string }): Iterable<any> {
-    const path = action.payload;
+  public static *newTranscript(action: ChatAction<OpenTranscriptPayload>): Iterable<any> {
+    const { filename } = action.payload;
     // start a conversation
     const serverUrl = yield select(getServerUrl);
     const user = { id: yield select(getCustomUserGUID) || uniqueIdv4(), name: 'User', role: 'user' };
@@ -154,31 +156,28 @@ export class ChatSagas {
       msaAppId: '',
       msaPassword: '',
     };
-    let res: Response = yield ConversationService.startConversationV2(serverUrl, payload2);
+    let res: Response = yield ConversationService.startConversation(serverUrl, payload2);
     if (!res.ok) {
-      // error handling here
+      throw new Error(
+        `Error occurred while starting a new conversation: ${res.status}: ${res.statusText || 'No status text'}`
+      );
     }
-    const {
-      conversationId,
-      endpointId,
-    }: //members,
-    { conversationId: string; endpointId: string; members: User[] } = yield res.json();
+    const { conversationId, endpointId }: { conversationId: string; endpointId: string } = yield res.json();
     const documentId = `${conversationId}`;
 
-    // extract activities from the file and feed them into the conversation
     let activities;
-    if (path.endsWith('.chat')) {
-      // use chatdown to extract activities
-      // activities = useChatDown();
+    if (action.payload.activities && action.payload.activities.length) {
+      activities = action.payload.activities;
+    } else {
+      const result: any = yield ChatSagas.commandService.remoteCall(
+        SharedConstants.Commands.Emulator.ExtractActivitiesFromFile,
+        filename
+      );
+      activities = result.activities;
     }
-    const result: any = yield ChatSagas.commandService.remoteCall(
-      SharedConstants.Commands.Emulator.FeedTranscriptFromDisk,
-      path
-    );
-    activities = result.activities;
 
     // put the chat document into the store
-    yield ChatSagas.newChat({
+    yield ChatSagas.bootstrapChat({
       conversationId,
       documentId,
       endpointId,
@@ -186,34 +185,37 @@ export class ChatSagas {
       user,
     });
 
-    // feed activities into the conversation
-    res = yield fetch(`${serverUrl}/emulator/${conversationId}/transcript`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(activities),
-    });
-    if (!res.ok) {
-      // error handling
-    }
-
     // open a document to render the transcript
     yield put(
       openDocument({
         contentType: SharedConstants.ContentTypes.CONTENT_TYPE_TRANSCRIPT,
         documentId,
-        fileName: path,
+        fileName: filename,
         isGlobal: false,
       })
     );
 
-    // TODO: telemetry
+    // feed activities into the conversation's transcript
+    res = yield ConversationService.feedActivitiesAsTranscript(serverUrl, conversationId, activities);
+    if (!res.ok) {
+      throw new Error(
+        `Error occurred while feeding activities as a transcript: ${res.status}: ${res.statusText || 'No status text'}`
+      );
+    }
+
+    if (filename.endsWith('.chat')) {
+      ChatSagas.commandService
+        .remoteCall(SharedConstants.Commands.Telemetry.TrackEvent, 'chatFile_open')
+        .catch(_e => void 0);
+    } else if (filename.endsWith('.transcript')) {
+      ChatSagas.commandService
+        .remoteCall(SharedConstants.Commands.Telemetry.TrackEvent, 'transcriptFile_open')
+        .catch(_e => void 0); // TODO: add method? useful?
+    }
   }
 
-  public static *newChat(payload: any): Iterable<any> {
+  public static *bootstrapChat(payload: BootstrapChatPayload): Iterable<any> {
     const { conversationId, documentId, endpointId, mode, msaAppId, msaPassword, user } = payload;
-
     // Create a new webchat store for this documentId
     yield put(webChatStoreUpdated(documentId, createWebChatStore()));
     // Each time a new chat is open, retrieve the speech token
@@ -299,7 +301,9 @@ export class ChatSagas {
       userId,
     });
     if (!res.ok) {
-      // error handling
+      throw new Error(
+        `Error occurred while updating a conversation: ${res.status}: ${res.statusText || 'No status text'}`
+      );
     }
     const { botEndpoint, members }: any = yield res.json(); // TODO: typings
 
@@ -308,19 +312,18 @@ export class ChatSagas {
 
     // update chat document
     yield put(
-      newConversation(documentId, {
+      newChat(documentId, chat.mode, {
         conversationId,
         directLine,
         userId,
-        mode: chat.mode,
       })
     );
 
     // initial report
     yield ConversationService.sendInitialLogReport(serverUrl, conversationId, botEndpoint.botUrl);
 
-    // send CU
-    yield ChatSagas.sendInitialActivities({ conversationId, members, mode: chat.mode });
+    // send CU or /INSPECT open
+    yield ChatSagas.sendInitialActivity({ conversationId, members, mode: chat.mode });
 
     // initialize speech
     if (botEndpoint.msaAppId && botEndpoint.msaPassword) {
@@ -351,18 +354,16 @@ export class ChatSagas {
     }
   }
 
-  public static *sendInitialActivities(payload: any): Iterator<any> {
+  public static *sendInitialActivity(payload: any): Iterator<any> {
     const { conversationId, members, mode } = payload;
 
     let activity;
     if (mode === 'debug') {
-      // send /INSPECT open activity
       activity = {
         type: 'message',
         text: '/INSPECT open',
       };
     } else {
-      // send CU
       activity = {
         type: 'conversationUpdate',
         membersAdded: members,
@@ -386,13 +387,21 @@ export class ChatSagas {
       userId,
     };
     const secret = encode(JSON.stringify(options));
+    const res: Response = yield fetch(`${serverUrl}/emulator/ws/port`);
+    if (!res.ok) {
+      throw new Error(
+        `Error occurred while retrieving the WebSocket server port: ${res.status}: ${res.statusText ||
+          'No status text'}`
+      );
+    }
+    const webSocketPort = yield res.text();
     const directLine = createDirectLine({
-      token: 'mytoken',
+      token: 'emulatorToken',
       conversationId,
       secret,
       domain: `${serverUrl}/v3/directline`,
       webSocket: true,
-      streamUrl: `ws://localhost:5005/ws/${conversationId}`,
+      streamUrl: `ws://localhost:${webSocketPort}/ws/${conversationId}`,
     });
     return directLine;
   }
@@ -411,5 +420,5 @@ export function* chatSagas(): IterableIterator<ForkEffect> {
   yield takeEvery(ChatActions.showContextMenuForActivity, ChatSagas.showContextMenuForActivity);
   yield takeEvery(ChatActions.closeConversation, ChatSagas.closeConversation);
   yield takeEvery(ChatActions.restartConversation, ChatSagas.restartConversation);
-  yield takeEvery('OPEN_TRANSCRIPT', ChatSagas.newTranscript);
+  yield takeEvery(ChatActions.openTranscript, ChatSagas.newTranscript);
 }

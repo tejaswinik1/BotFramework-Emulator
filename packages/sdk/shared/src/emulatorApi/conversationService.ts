@@ -31,10 +31,10 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { StartConversationParams } from '../types/activity';
 import { uniqueId } from '../utils';
 import { ChannelService } from '../types/channelService';
-import { EmulatorMode } from '../types';
+import { EmulatorMode, User } from '../types';
+import { Activity } from 'botframework-schema';
 
 export const headers = {
   'Content-Accept': 'application/json',
@@ -43,6 +43,20 @@ export const headers = {
 interface UpdateConversationPayload {
   conversationId: string;
   userId: string;
+}
+
+interface ConversationMember extends User {
+  role?: string;
+}
+
+interface StartConversationPayload {
+  bot?: ConversationMember;
+  botUrl: string;
+  channelServiceType: ChannelService;
+  members: ConversationMember[];
+  mode: EmulatorMode;
+  msaAppId?: string;
+  msaPassword?: string;
 }
 
 export class ConversationService {
@@ -112,42 +126,12 @@ export class ConversationService {
     });
   }
 
-  public static getConversationEndpoint(serverUrl: string, conversationId: string): Promise<Response> {
-    const url = `${serverUrl}/emulator/${conversationId}/endpoint`;
-    return fetch(url);
-  }
-
-  public static startConversation(serverUrl: string, payload: Partial<StartConversationParams>): Promise<Response> {
-    const { endpoint, appId = '', appPassword = '', user, channelService, ...body } = payload;
-    const url = serverUrl + `/v3/conversations`;
+  public static startConversation(serverUrl: string, payload: StartConversationPayload): Promise<Response> {
+    const url = `${serverUrl}/v3/conversations`;
     return fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Emulator-BotEndpoint': (endpoint || '').trim(),
-        'X-Emulator-AppId': (appId || '').trim(),
-        'X-Emulator-AppPassword': (appPassword || '').trim(),
-        'X-Emulator-ChannelService': (channelService || '').trim().toLowerCase(),
-      },
-      body: JSON.stringify({
-        bot: {
-          id: uniqueId(),
-          name: 'Bot',
-          role: 'bot',
-        },
-        members: [user],
-        ...body,
-      }),
-    });
-  }
-
-  public static startConversationV2(serverUrl: string, payload: StartConversationPayload): Promise<Response> {
-    const url = `${serverUrl}/v3/conversations/new`;
-    return fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Emulator-No-Bot-File': '',
       },
       body: JSON.stringify({
         ...payload,
@@ -196,19 +180,19 @@ export class ConversationService {
       body: JSON.stringify(botUrl),
     });
   }
-}
 
-interface ConversationMember {
-  id: string;
-  name?: string;
-  role?: string;
-}
-export interface StartConversationPayload {
-  bot?: ConversationMember;
-  botUrl: string;
-  channelServiceType: ChannelService;
-  members: ConversationMember[];
-  mode: EmulatorMode;
-  msaAppId?: string;
-  msaPassword?: string;
+  public static feedActivitiesAsTranscript(
+    serverUrl: string,
+    conversationId: string,
+    activities: Activity[]
+  ): Promise<Response> {
+    const url = `${serverUrl}/emulator/${conversationId}/transcript`;
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(activities),
+    });
+  }
 }

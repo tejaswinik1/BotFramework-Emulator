@@ -161,27 +161,6 @@ export function chat(state: ChatState = DEFAULT_STATE, action: ChatAction | Edit
       break;
     }
 
-    case ChatActions.newConversation: {
-      const { payload } = action;
-      let document = state.chats[payload.documentId];
-      if (document) {
-        document = {
-          ...document,
-          ...payload.options,
-        };
-        state = {
-          ...state,
-          chats: {
-            ...state.chats,
-            [payload.documentId]: {
-              ...document,
-            },
-          },
-        };
-      }
-      break;
-    }
-
     case ChatActions.appendLog: {
       const { payload } = action;
       let document = state.chats[payload.documentId];

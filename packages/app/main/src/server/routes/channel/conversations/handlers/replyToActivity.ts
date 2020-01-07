@@ -58,11 +58,11 @@ export function createReplyToActivityHandler(emulatorServer: EmulatorRestServer)
       const continuation = function(): void {
         const { conversation }: { conversation: Conversation } = req as any;
 
+        // post activity
         activity = conversation.prepActivityToBeSentToUser(conversation.user.id, activity);
         const payload = { activities: [activity] };
         const socket = WebSocketServer.getSocketByConversationId(conversationId);
         socket && socket.send(JSON.stringify(payload));
-        emulatorServer.logger.logActivity(conversationId, activity, activity.recipient.role);
 
         res.send(HttpStatus.OK, { id: activity.id });
         res.end();

@@ -31,32 +31,30 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { Activity } from 'botframework-schema';
-import * as HttpStatus from 'http-status-codes';
 import { Next, Request, Response } from 'restify';
+import { OK } from 'http-status-codes';
 
-import { sendErrorResponse } from '../../../../utils/sendErrorResponse';
-import { WebSocketServer } from '../../../../webSocketServer';
-import { Conversation } from '../../../../state/conversation';
+import { EmulatorRestServer } from '../../../restServer';
+import { WebSocketServer } from '../../../webSocketServer';
 
-export function sendActivityToConversation(req: Request, res: Response, next: Next): any {
-  let activity = req.body as Activity;
-  try {
-    activity.id = null;
-    activity.replyToId = req.params.activityId;
-    const { conversation }: { conversation: Conversation } = req as any;
+import { Conversation } from '../../../state/conversation';
 
-    // post activity
-    activity = conversation.prepActivityToBeSentToUser(conversation.user.id, activity);
-    const payload = { activities: [activity] };
-    const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
-    socket && socket.send(JSON.stringify(payload));
+/** Feed activities into the conversation as a transcript */
+export function createFeedActivitiesAsTranscriptHandler(emulatorServer: EmulatorRestServer) {
+  return (req: Request, res: Response, next: Next): any => {
+    const { conversationId } = req.params;
+    let activities = req.body;
+    const conversation: Conversation = emulatorServer.state.conversations.conversationById(conversationId);
+    activities = conversation.prepTranscriptActivities(activities);
+    activities.forEach(activity => {
+      const payload = { activities: [activity] };
+      const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
+      socket && socket.send(JSON.stringify(payload));
+      conversation.emulatorServer.logger.logActivity(conversation.conversationId, activity, activity.recipient.role);
+    });
 
-    res.send(HttpStatus.OK, { id: activity.id });
+    res.send(OK);
     res.end();
-  } catch (err) {
-    sendErrorResponse(req, res, next, err);
-  }
-
-  next();
+    next();
+  };
 }

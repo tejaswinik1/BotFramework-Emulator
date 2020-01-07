@@ -41,6 +41,7 @@ interface WebSocket {
 }
 
 export class WebSocketServer {
+  public static port: number;
   private static _restServer: Server;
   private static _servers: { [conversationId: string]: WSServer } = {};
   private static _sockets: { [conversationId: string]: WebSocket } = {};
@@ -49,7 +50,10 @@ export class WebSocketServer {
     return this._sockets[conversationId];
   }
 
-  public static init(): void {
+  public static async init(): Promise<number> {
+    if (this._restServer) {
+      this.cleanup();
+    }
     this._restServer = createServer({ handleUpgrades: true, name: 'Emulator-WebSocket-Host' });
     this._restServer.get('/ws/:conversationId', (req: Request, res: Response, next) => {
       const conversationId = req.params.conversationId;
@@ -70,9 +74,6 @@ export class WebSocketServer {
           socket.on('message', data => {
             // will only receive (blank) data here when DLJS pings us to test the socket connection
           });
-          socket.on('open', () => {
-            // don't think we need to do anything here?
-          });
           socket.on('close', (code, reason) => {
             console.log('got close for ', conversationId);
             delete this._servers[conversationId];
@@ -86,9 +87,16 @@ export class WebSocketServer {
         this._servers[conversationId] = wsServer;
       }
     });
-    this._restServer.listen(5005, () => {
-      console.log('Web Socket host server listening on 5005...');
+    // dynamically generate the web socket server port
+    const port = await new Promise<number>((resolve, reject) => {
+      this._restServer.once('error', err => reject(err));
+      this._restServer.listen(null, () => {
+        resolve(this._restServer.address().port);
+      });
     });
+    this.port = port;
+    console.log(`Web Socket host server listening on ${port}...`);
+    return port;
   }
 
   public static cleanup(): void {

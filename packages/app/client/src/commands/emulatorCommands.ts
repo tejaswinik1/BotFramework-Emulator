@@ -30,16 +30,12 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// import base64Url from 'base64url';
-// import { createDirectLine } from 'botframework-webchat';
+
 import { newNotification, SharedConstants } from '@bfemulator/app-shared';
 import { ChannelService, CommandServiceImpl, CommandServiceInstance } from '@bfemulator/sdk-shared';
 import { IEndpointService } from 'botframework-config/lib/schema';
-import { Activity } from 'botframework-schema';
 import { Command } from '@bfemulator/sdk-shared';
 import { EmulatorMode } from '@bfemulator/sdk-shared';
-
-import * as Constants from '../constants';
 import * as ChatActions from '../state/actions/chatActions';
 import * as EditorActions from '../state/actions/editorActions';
 import { beginAdd } from '../state/actions/notificationActions';
@@ -69,40 +65,8 @@ export class EmulatorCommands {
         appPassword: endpoint.appPassword,
         channelService: endpoint.channelService as ChannelService,
         endpoint: endpoint.endpoint,
+        isFromBotFile: true,
         mode,
-      })
-    );
-
-    // TODO: figure out how to swap in proper telemetry call for bots opened here via .bot file
-
-    // if (!isLocalHostUrl(endpoint.endpoint)) {
-    //   this.commandService.remoteCall(TrackEvent, 'livechat_openRemote').catch(_e => void 0);
-    // }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Open the transcript file in a tabbed document
-  @Command(Emulator.OpenTranscript)
-  protected openTranscript(filePath: string, fileName: string, additionalData?: object) {
-    const tabGroup = getTabGroupForDocument(filePath);
-    const { currentUserId } = store.getState().clientAwareSettings.users;
-    if (!tabGroup) {
-      store.dispatch(
-        ChatActions.newChat(filePath, 'transcript', {
-          ...additionalData,
-          botId: 'bot',
-          userId: currentUserId,
-        })
-      );
-    }
-
-    store.dispatch(
-      EditorActions.open({
-        contentType: Constants.CONTENT_TYPE_TRANSCRIPT,
-        documentId: filePath,
-        fileName,
-        filePath,
-        isGlobal: false,
       })
     );
   }
@@ -117,20 +81,16 @@ export class EmulatorCommands {
       properties: ['openFile'],
       filters: [
         {
-          name: 'Transcript Files',
-          extensions: ['transcript'],
+          name: 'Transcript Files (.chat, .transcript)',
+          extensions: ['chat', 'transcript'],
         },
       ],
     };
     try {
       const { ShowOpenDialog } = SharedConstants.Commands.Electron;
-      const filename = await this.commandService.remoteCall(ShowOpenDialog, dialogOptions);
+      const filename: string = await this.commandService.remoteCall(ShowOpenDialog, dialogOptions);
       if (filename) {
-        //await this.commandService.call(Emulator.OpenTranscript, filename);
-        store.dispatch({
-          type: 'OPEN_TRANSCRIPT',
-          payload: filename,
-        });
+        store.dispatch(ChatActions.openTranscript(filename));
         this.commandService
           .remoteCall(TrackEvent, 'transcriptFile_open', {
             method: 'file_menu',
@@ -147,53 +107,12 @@ export class EmulatorCommands {
   // ---------------------------------------------------------------------------
   // Same as open transcript, except that it closes the transcript first, before reopening it
   @Command(Emulator.ReloadTranscript)
-  protected reloadTranscript(filePath: string, fileName: string, additionalData?: object) {
+  protected reloadTranscript(filePath: string, filename: string) {
     const tabGroup = getTabGroupForDocument(filePath);
-    const { currentUserId } = store.getState().clientAwareSettings.users;
     if (tabGroup) {
       store.dispatch(EditorActions.close(getTabGroupForDocument(filePath), filePath));
       store.dispatch(ChatActions.closeDocument(filePath));
     }
-    store.dispatch(
-      ChatActions.newChat(filePath, 'transcript', {
-        ...additionalData,
-        botId: 'bot',
-        userId: currentUserId,
-      })
-    );
-    store.dispatch(
-      EditorActions.open({
-        contentType: Constants.CONTENT_TYPE_TRANSCRIPT,
-        documentId: filePath,
-        filePath,
-        fileName,
-        isGlobal: false,
-      })
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Open the chat file in a tabbed document as a transcript
-  @Command(Emulator.OpenChatFile)
-  protected async openChatFile(filePath: string, reload?: boolean) {
-    try {
-      // wait for the main side to use the chatdown library to parse the activities (transcript) out of the .chat file
-      const {
-        activities,
-        fileName,
-      }: {
-        activities: Activity[];
-        fileName: string;
-      } = await this.commandService.remoteCall<any>(Emulator.OpenChatFile, filePath);
-
-      // open or reload the transcript
-      if (reload) {
-        await this.commandService.call(Emulator.ReloadTranscript, filePath, fileName, { activities, inMemory: true });
-      } else {
-        await this.commandService.call(Emulator.OpenTranscript, filePath, fileName, { activities, inMemory: true });
-      }
-    } catch (err) {
-      throw new Error(`Error while retrieving activities from main side: ${err}`);
-    }
+    store.dispatch(ChatActions.openTranscript(filename));
   }
 }

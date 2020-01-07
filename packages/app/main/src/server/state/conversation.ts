@@ -860,6 +860,10 @@ export class Conversation extends EventEmitter {
       activity.recipient.role = 'user';
     }
 
+    // internal tracking
+    this.addActivityToQueue(activity);
+    this.transcript = [...this.transcript, { type: 'activity add', activity }];
+
     return activity;
   }
 

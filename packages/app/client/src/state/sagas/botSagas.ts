@@ -39,6 +39,7 @@ import {
   StartConversationParams,
   uniqueIdv4,
   User,
+  isLocalHostUrl,
 } from '@bfemulator/sdk-shared';
 import { call, ForkEffect, put, select, takeEvery, takeLatest } from 'redux-saga/effects';
 
@@ -85,7 +86,9 @@ export class BotSagas {
     }
   }
 
-  public static *openBotViaUrl(action: BotAction<StartConversationParams>): Iterable<any> {
+  public static *openBotViaUrl(
+    action: BotAction<StartConversationParams & { isFromBotFile?: boolean }>
+  ): Iterable<any> {
     const user = {
       id: yield select(getCustomUserGUID) || uniqueIdv4(), // use custom id or generate new one
       name: 'User',
@@ -100,9 +103,11 @@ export class BotSagas {
       msaAppId: action.payload.appId,
       msaPassword: action.payload.appPassword,
     };
-    let res: Response = yield ConversationService.startConversationV2(serverUrl, payload);
+    let res: Response = yield ConversationService.startConversation(serverUrl, payload);
     if (!res.ok) {
-      // error handling here
+      throw new Error(
+        `Error occurred while starting a new conversation: ${res.status}: ${res.statusText || 'No status text'}`
+      );
     }
     const {
       conversationId,
@@ -112,7 +117,7 @@ export class BotSagas {
     const documentId = `${conversationId}`;
 
     // trigger chat saga that will populate the chat object in the store
-    yield ChatSagas.newChat({
+    yield ChatSagas.bootstrapChat({
       conversationId,
       documentId,
       endpointId,
@@ -135,13 +140,17 @@ export class BotSagas {
     // call emulator to report proper status to chat panel (listening / ngrok)
     res = yield ConversationService.sendInitialLogReport(serverUrl, conversationId, action.payload.endpoint);
     if (!res.ok) {
-      // err handling
+      throw new Error(
+        `Error occurred while sending the initial log report: ${res.status}: ${res.statusText || 'No status text'}`
+      );
     }
 
     // send CU or debug INSPECT message
-    res = yield ChatSagas.sendInitialActivities({ conversationId, members, mode: action.payload.mode });
+    res = yield ChatSagas.sendInitialActivity({ conversationId, members, mode: action.payload.mode });
     if (!res.ok) {
-      // err handling
+      throw new Error(
+        `Error occurred while sending the initial activities: ${res.status}: ${res.statusText || 'No status text'}`
+      );
     }
 
     // remember the endpoint
@@ -150,11 +159,19 @@ export class BotSagas {
       SharedConstants.Commands.Settings.SaveBotUrl,
       action.payload.endpoint
     );
-    BotSagas.commandService.remoteCall(SharedConstants.Commands.Telemetry.TrackEvent, 'bot_open', {
-      method: null, // this code path can be hit by multiple methods
-      numOfServices: 0,
-      source: 'url',
-    });
+
+    // telemetry
+    if (!action.payload.isFromBotFile) {
+      BotSagas.commandService.remoteCall(SharedConstants.Commands.Telemetry.TrackEvent, 'bot_open', {
+        numOfServices: 0,
+        source: 'url',
+      });
+    }
+    if (!isLocalHostUrl(action.payload.endpoint)) {
+      BotSagas.commandService
+        .remoteCall(SharedConstants.Commands.Telemetry.TrackEvent, 'livechat_openRemote')
+        .catch(_e => void 0);
+    }
   }
 }
 

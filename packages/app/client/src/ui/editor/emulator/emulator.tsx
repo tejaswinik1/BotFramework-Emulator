@@ -70,7 +70,6 @@ export interface EmulatorProps {
   framework?: FrameworkSettings;
   inMemory?: boolean;
   mode?: EmulatorMode;
-  newConversation?: (documentId: string, options: any) => void;
   presentationModeEnabled?: boolean;
   restartConversation?: (documentId: string, requireNewConversationId: boolean, requireNewUserId: boolean) => void;
   restartDebugSession?: (conversationId: string, documentId: string) => void;

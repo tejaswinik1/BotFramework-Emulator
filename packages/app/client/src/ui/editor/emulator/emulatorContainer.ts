@@ -53,7 +53,7 @@ const mapStateToProps = (state: RootState, { documentId, ...ownProps }: { docume
     documentId,
     endpointId: state.chat.chats[documentId].endpointId,
     framework: state.framework,
-    inMemory: state.chat.chats[documentId].inMemory,
+    inMemory: state.chat.chats[documentId].inMemory, //TODO: remove
     presentationModeEnabled: state.presentation.enabled,
     ui: state.chat.chats[documentId].ui,
     url: state.clientAwareSettings.serverUrl,
@@ -73,7 +73,6 @@ const mapDispatchToProps = (dispatch): EmulatorProps => ({
     dispatch(
       executeCommand(true, SharedConstants.Commands.Emulator.SaveTranscriptToFile, null, valueTypes, conversationId)
     ),
-  newConversation: (documentId, options) => dispatch(ChatActions.newConversation(documentId, options)),
   restartConversation: (documentId: string, requireNewConversationId: boolean, requireNewUserId: boolean) =>
     dispatch(ChatActions.restartConversation(documentId, requireNewConversationId, requireNewUserId)),
   setInspectorObjects: (documentId, objects) => dispatch(ChatActions.setInspectorObjects(documentId, objects)),

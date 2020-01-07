@@ -31,32 +31,17 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-import { Activity } from 'botframework-schema';
-import * as HttpStatus from 'http-status-codes';
 import { Next, Request, Response } from 'restify';
 
-import { sendErrorResponse } from '../../../../utils/sendErrorResponse';
-import { WebSocketServer } from '../../../../webSocketServer';
-import { Conversation } from '../../../../state/conversation';
+import { WebSocketServer } from '../../../webSocketServer';
+import { INTERNAL_SERVER_ERROR, OK } from 'http-status-codes';
 
-export function sendActivityToConversation(req: Request, res: Response, next: Next): any {
-  let activity = req.body as Activity;
+export async function getWebSocketPort(req: Request, res: Response, next: Next): Promise<any> {
   try {
-    activity.id = null;
-    activity.replyToId = req.params.activityId;
-    const { conversation }: { conversation: Conversation } = req as any;
-
-    // post activity
-    activity = conversation.prepActivityToBeSentToUser(conversation.user.id, activity);
-    const payload = { activities: [activity] };
-    const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
-    socket && socket.send(JSON.stringify(payload));
-
-    res.send(HttpStatus.OK, { id: activity.id });
-    res.end();
-  } catch (err) {
-    sendErrorResponse(req, res, next, err);
+    res.send(OK, WebSocketServer.port || (await WebSocketServer.init()));
+  } catch (e) {
+    res.send(INTERNAL_SERVER_ERROR, e);
   }
-
+  res.end();
   next();
 }

@@ -48,10 +48,10 @@ import { sendTyping } from './handlers/sendTyping';
 import { updateShippingAddress } from './handlers/updateShippingAddress';
 import { updateShippingOption } from './handlers/updateShippingOption';
 import { createGetConversationEndpointHandler } from './handlers/getConversationEndpoint';
-import { Emulator } from '../../../emulator';
-import { Conversation } from '../../state/conversation';
-import { WebSocketServer } from '../../webSocketServer';
-//import { WebSocketServer } from '../../webSocketServer';
+import { createUpdateConversationHandler } from './handlers/updateConversation';
+import { createInitialReportHandler } from './handlers/initialReport';
+import { createFeedActivitiesAsTranscriptHandler } from './handlers/feedActivitiesAsTranscript';
+import { getWebSocketPort } from './handlers/getWebSocketPort';
 
 export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
   const { server, state } = emulatorServer;
@@ -94,70 +94,19 @@ export function mountEmulatorRoutes(emulatorServer: EmulatorRestServer) {
 
   server.post('/emulator/:conversationId/invoke/sendTokenResponse', jsonBodyParser, sendTokenResponse);
 
-  server.get('/emulator/users', (req, res, next) => {
-    res.send(200, state.users);
-    res.end();
-    next();
-  });
+  server.put('/emulator/:conversationId', jsonBodyParser, createUpdateConversationHandler(state));
 
-  // TODO: move to separate file
-  // update the conversation object
-  server.put('/emulator/:conversationId', jsonBodyParser, (req, res, next) => {
-    const currentConversationId = req.params.conversationId;
-    const { conversationId, userId } = req.body;
-    const currentConversation = state.conversations.conversationById(currentConversationId);
-    if (!currentConversationId) {
-      res.send(404);
-      return next();
-    }
+  server.post(
+    '/emulator/:conversationId/invoke/initialReport',
+    jsonBodyParser,
+    createInitialReportHandler(emulatorServer)
+  );
 
-    // update the conversation object and reset as much as we can to resemble a new conversation
-    state.conversations.deleteConversation(currentConversationId);
-    currentConversation.conversationId = conversationId;
-    currentConversation.user.id = userId;
-    const user = currentConversation.members.find(member => member.name === 'User');
-    user.id = userId;
-    currentConversation.normalize();
-    currentConversation.nextWatermark = 0;
-    state.conversations.conversations[conversationId] = currentConversation;
+  server.post(
+    '/emulator/:conversationId/transcript',
+    jsonBodyParser,
+    createFeedActivitiesAsTranscriptHandler(emulatorServer)
+  );
 
-    res.send(200, {
-      // can't return the conversation object because event emitters are circular JSON
-      botEndpoint: currentConversation.botEndpoint,
-      conversationId: currentConversation.conversationId,
-      user: currentConversation.user,
-      mode: currentConversation.mode,
-      members: currentConversation.members,
-      nextWatermark: currentConversation.nextWatermark,
-    });
-    next();
-  });
-
-  // TODO: move to separate file
-  server.post('/emulator/:conversationId/invoke/initialReport', jsonBodyParser, (req, res, next) => {
-    const botUrl = req.body;
-    const { conversationId } = req.params;
-    emulatorServer.report(conversationId);
-    Emulator.getInstance().ngrok.report(conversationId, botUrl);
-
-    res.send(200);
-    res.end();
-    next();
-  });
-
-  // TODO: move to separate file
-  server.post('/emulator/:conversationId/transcript', jsonBodyParser, (req, res, next) => {
-    const { conversationId } = req.params;
-    let activities = req.body;
-    const conversation: Conversation = emulatorServer.state.conversations.conversationById(conversationId);
-    activities = conversation.prepTranscriptActivities(activities);
-    const payload = { activities };
-    const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
-    socket && socket.send(JSON.stringify(payload));
-    //conversation.emulatorServer.logger.logActivity(conversation.conversationId, activity, activity.recipient.role);
-
-    res.send(200);
-    res.end();
-    next();
-  });
+  server.get('/emulator/ws/port', getWebSocketPort);
 }

@@ -155,8 +155,12 @@ export function openBotViaFilePathAction(path: string): BotAction<string> {
   };
 }
 
+interface BotSource {
+  isFromBotFile?: boolean;
+}
+
 export function openBotViaUrlAction(
-  startConversationParams: Partial<StartConversationParams>
+  startConversationParams: Partial<StartConversationParams> & BotSource
 ): BotAction<Partial<StartConversationParams>> {
   return {
     type: BotActionType.openViaUrl,

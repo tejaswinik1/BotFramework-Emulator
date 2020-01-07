@@ -30,40 +30,24 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-import { APIException, ErrorCodes } from '@bfemulator/sdk-shared';
-import * as HttpStatus from 'http-status-codes';
-import { ConversationParameters } from 'botframework-schema';
 
-import { BotEndpoint } from '../../../../../state/botEndpoint';
-import { createAPIException } from '../../../../../utils/createResponse/createAPIException';
+import { Next, Request, Response } from 'restify';
+import { OK } from 'http-status-codes';
 
-export class CreateConversationError {
-  constructor(public errorCode: ErrorCodes, public message: string) {}
+import { EmulatorRestServer } from '../../../restServer';
 
-  public toAPIException(): APIException {
-    return createAPIException(HttpStatus.BAD_REQUEST, this.errorCode, this.message);
-  }
-}
+import { Emulator } from '../../../../emulator';
 
-export function validateCreateConversationRequest(
-  params: ConversationParameters,
-  endpoint: BotEndpoint
-): CreateConversationError | void {
-  if (params.members && params.members.length > 1) {
-    return new CreateConversationError(
-      ErrorCodes.BadSyntax,
-      'The Emulator only supports creating conversation with 1 member.'
-    );
-  }
+/* sends the initial conversation report to the log panel (ngrok and server url) */
+export function createInitialReportHandler(emulatorServer: EmulatorRestServer) {
+  return (req: Request, res: Response, next: Next): any => {
+    const botUrl = req.body;
+    const { conversationId } = req.params;
+    emulatorServer.report(conversationId);
+    Emulator.getInstance().ngrok.report(conversationId, botUrl);
 
-  if (!params.bot) {
-    return new CreateConversationError(ErrorCodes.MissingProperty, 'The "Bot" parameter is required');
-  }
-
-  if (!endpoint) {
-    return new CreateConversationError(
-      ErrorCodes.MissingProperty,
-      'The Emulator only supports bot-created conversation with AppID-bearing bot'
-    );
-  }
+    res.send(OK);
+    res.end();
+    next();
+  };
 }

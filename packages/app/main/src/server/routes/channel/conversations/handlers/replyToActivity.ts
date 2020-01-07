@@ -54,7 +54,6 @@ export function createReplyToActivityHandler(emulatorServer: EmulatorRestServer)
       activity.replyToId = req.params.activityId;
       const { conversationId } = conversationParameters;
 
-      // TODO: make sure all this stuff works with transcripts
       const continuation = function(): void {
         const { conversation }: { conversation: Conversation } = req as any;
 

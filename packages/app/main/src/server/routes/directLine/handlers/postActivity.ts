@@ -77,8 +77,9 @@ export function createPostActivityHandler(emulatorServer: EmulatorRestServer) {
         }
 
         // satisfy the Web Chat echoback requirement
+        const payload = { activities: [{ ...activity, id: activityId }] };
         const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
-        socket && socket.send(JSON.stringify({ activities: [{ ...activity, id: activityId }] }));
+        socket && socket.send(JSON.stringify(payload));
       }
     } catch (err) {
       sendErrorResponse(req, res, next, err);

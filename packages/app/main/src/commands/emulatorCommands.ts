@@ -163,18 +163,6 @@ export class EmulatorCommands {
     return Emulator.getInstance().server.state.conversations.deleteConversation(conversationId);
   }
 
-  // ---------------------------------------------------------------------------
-  // Removes the conversation from the conversation set
-  @Command(Commands.PostActivityToConversation)
-  protected postActivityToConversation(conversationId: string, activity: any, toUser: boolean) {
-    const conversation = Emulator.getInstance().server.state.conversations.conversationById(conversationId);
-    if (toUser) {
-      return conversation.postActivityToUser(activity, false);
-    } else {
-      return conversation.postActivityToBot(activity, false);
-    }
-  }
-
   @Command(Commands.StartEmulator)
   protected async startEmulator(forceRestart: boolean = false) {
     const emulator = Emulator.getInstance();

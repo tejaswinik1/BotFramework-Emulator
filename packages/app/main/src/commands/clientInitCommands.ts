@@ -104,8 +104,8 @@ export class ClientInitCommands {
       ProtocolHandler.parseProtocolUrlAndDispatch(protocolArg);
     }
 
-    // Parse command line args to see if we are opening a .bot or .transcript file
-    const fileToBeOpened = args.find(arg => /(\.transcript)|(\.bot)$/.test(arg));
+    // Parse command line args to see if we are opening a .bot, .chat, or .transcript file
+    const fileToBeOpened = args.find(arg => /(\.transcript)|(\.chat)|(\.bot)$/.test(arg));
     if (fileToBeOpened) {
       await openFileFromCommandLine(fileToBeOpened, this.commandService);
     }

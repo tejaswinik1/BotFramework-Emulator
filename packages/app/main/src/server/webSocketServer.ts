@@ -69,13 +69,8 @@ export class WebSocketServer {
           noServer: true,
         });
         wsServer.on('connection', (socket, req) => {
-          console.log('got a connection for ', conversationId);
           this._sockets[conversationId] = socket;
-          socket.on('message', data => {
-            // will only receive (blank) data here when DLJS pings us to test the socket connection
-          });
           socket.on('close', (code, reason) => {
-            console.log('got close for ', conversationId);
             delete this._servers[conversationId];
             delete this._sockets[conversationId];
           });

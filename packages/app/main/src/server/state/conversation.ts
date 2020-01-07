@@ -68,8 +68,6 @@ import { traceContainsDebugData, ValueTypesMask } from '@bfemulator/app-shared';
 import { TokenCache } from '../routes/channel/userToken/tokenCache';
 import { createAPIException } from '../utils/createResponse/createAPIException';
 import { createResourceResponse } from '../utils/createResponse/createResourceResponse';
-import { OAuthClientEncoder } from '../utils/oauthClientEncoder';
-import { PaymentEncoder } from '../utils/paymentEncoder';
 import { uniqueId } from '../utils/uniqueId';
 import { EmulatorRestServer } from '../restServer';
 
@@ -250,54 +248,6 @@ export class Conversation extends EventEmitter {
       ),
       textItem(LogLevel.Debug, `directline.conversationUpdate`)
     );
-  }
-
-  /**
-   * Queues activity for delivery to user.
-   */
-  public postActivityToUser(activity: Activity, isHistoric: boolean = false): ResourceResponse {
-    activity = this.processActivity(activity);
-    activity = this.postage(this.user.id, activity, isHistoric);
-
-    if (!activity.from.name) {
-      activity.from.name = 'Bot';
-    }
-
-    if (activity.name === 'ReceivedActivity') {
-      activity.value.from.role = 'user';
-    } else if (activity.name === 'SentActivity') {
-      activity.value.from.role = 'bot';
-    }
-
-    if (!activity.locale) {
-      activity.locale = this.emulatorServer.state.locale;
-    }
-
-    // Fill in role field, if missing
-    if (!activity.recipient.role) {
-      activity.recipient.role = 'user';
-    }
-
-    this.addActivityToQueue(activity);
-    this.transcript = [...this.transcript, { type: 'activity add', activity }];
-    this.emit('transcriptupdate');
-
-    if (activity.type === 'endOfConversation') {
-      this.emit('end');
-    }
-
-    return createResourceResponse(activity.id);
-  }
-
-  // TODO: Payment modification is only useful for emulator, but not local mode
-  //       This function turns all payment cardAction into openUrl to payment://
-  public processActivity(activity: Activity): Activity {
-    const visitors = [new PaymentEncoder(), new OAuthClientEncoder(activity)];
-
-    activity = { ...activity };
-    visitors.forEach(v => v.traverseActivity(activity));
-
-    return activity;
   }
 
   // This function turns local contentUrls into dataUrls://
@@ -618,73 +568,6 @@ export class Conversation extends EventEmitter {
     };
   }
 
-  // TODO: This need to be redesigned
-  public feedActivities(activities: Activity[]) {
-    /*
-     * We need to fixup the activities to look like they're part of the current conversation.
-     * This a limitation of the way the emulator was originally designed, and not a problem
-     * with the transcript data. In the fullness of time, the emulator (and webchat control)
-     * could be better adapted to loading transcripts.
-     * */
-
-    const { id: currUserId } = this.user;
-    let origUserId = null;
-    let origBotId = null;
-
-    // Get original botId and userId
-    // Fixup conversationId
-    activities.forEach(activity => {
-      if (activity.conversation) {
-        activity.conversation.id = this.conversationId;
-      }
-
-      const { type } = activity;
-
-      if (
-        activity.recipient &&
-        (type === 'event' || type === 'message' || type === 'messageReaction' || type === 'typing')
-      ) {
-        if (!origBotId && activity.recipient.role === 'bot') {
-          origBotId = activity.recipient.id;
-        }
-
-        if (!origUserId && activity.recipient.role === 'user') {
-          origUserId = activity.recipient.id;
-        }
-      }
-    });
-
-    // Fixup recipient and from ids
-    if (this.botEndpoint && origUserId && origBotId) {
-      activities.forEach(activity => {
-        if (activity.recipient.id === origBotId) {
-          activity.recipient.id = this.botEndpoint.botId;
-        }
-
-        if (activity.from.id === origBotId) {
-          activity.from.id = this.botEndpoint.botId;
-        }
-
-        if (activity.recipient.id === origUserId) {
-          activity.recipient.id = currUserId;
-        }
-
-        if (activity.from.id === origUserId) {
-          activity.from.id = currUserId;
-        }
-      });
-    }
-
-    // Add activities to the queue
-    activities.forEach(activity => {
-      if (activity.recipient && activity.recipient.role === 'user') {
-        activity = this.processActivity(activity);
-      }
-
-      this.addActivityToQueue(activity);
-    });
-  }
-
   public prepTranscriptActivities(activities: Activity[]): Activity[] {
     /*
      * We need to fixup the activities to look like they're part of the current conversation.
@@ -741,15 +624,6 @@ export class Conversation extends EventEmitter {
       });
     }
     return activities;
-
-    // Add activities to the queue
-    // activities.forEach(activity => {
-    //   if (activity.recipient && activity.recipient.role === 'user') {
-    //     activity = this.processActivity(activity);
-    //   }
-
-    //   this.addActivityToQueue(activity);
-    // });
   }
 
   /**

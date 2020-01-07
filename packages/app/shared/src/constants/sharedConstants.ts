@@ -108,7 +108,6 @@ export const SharedConstants = {
       ReloadTranscript: 'transcript:reload',
       AppendToLog: 'log:append',
       DeleteConversation: 'emulator:delete-conversation',
-      PostActivityToConversation: 'emulator:post-activity',
       StartEmulator: 'emulator:start',
       OpenProtocolUrls: 'emulator:openProtocolUrls',
       ClearState: 'emulator:clear-state',

@@ -70,8 +70,13 @@ export function createPostActivityHandler(emulatorServer: EmulatorRestServer) {
       } else {
         res.send(statusCode, { id: activityId });
 
+        // (filter out the /INSPECT open command because it doesn't originate from Web Chat)
+        if (activity.type === 'message' && activity.text === '/INSPECT open') {
+          res.end();
+          return next();
+        }
+
         // satisfy the Web Chat echoback requirement
-        // TODO: modify postactivity to return the conversation so that they more accurately match each other?
         const socket = WebSocketServer.getSocketByConversationId(conversation.conversationId);
         socket && socket.send(JSON.stringify({ activities: [{ ...activity, id: activityId }] }));
       }

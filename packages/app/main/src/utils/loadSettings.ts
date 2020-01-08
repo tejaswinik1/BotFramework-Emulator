@@ -43,7 +43,7 @@ export const loadSettings = (filename: string, defaultSettings: Partial<Settings
     const stat = fs.statSync(filename);
     if (stat.isFile()) {
       const settingsJson = JSON.parse(fs.readFileSync(filename, 'utf8')) as Settings;
-      const settings = mergeDeep<Settings, Settings>(defaultSettings, settingsJson);
+      const settings: any = mergeDeep<Settings, Settings>(defaultSettings, settingsJson);
       // wipe users property from settings (property has been deprecated)
       if (settings.users) {
         delete settings.users;
